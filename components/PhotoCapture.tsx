@@ -13,6 +13,13 @@ export default function PhotoCapture({ onCapture, captured }: Props) {
 
   const startCamera = useCallback(async () => {
     setError("");
+    
+    // Apple / iOS in-app browser blocker detection
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setError("Camera blocked by your app. If you are on an iPhone (like through WhatsApp or Telegram), tap the compass icon or 3 dots to Open in Safari.");
+      return;
+    }
+
     try {
       // First try with ideal high-res constraints
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -116,7 +123,14 @@ export default function PhotoCapture({ onCapture, captured }: Props) {
 
       {streaming ? (
         <div className="camera-wrapper">
-          <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            playsInline 
+            muted 
+            webkit-playsinline="true"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }} 
+          />
 
           {/* Flip button */}
           <button
