@@ -1,44 +1,38 @@
-// Shared logo mark — "DL" initials in a green gradient box, no placeholder SVGs
+// Shared logo mark — using the uploaded DL4ALL logo
 interface LogoMarkProps { size?: number; }
 
 export const LogoMark = ({ size = 32 }: LogoMarkProps) => (
   <div style={{
-    width: size, height: size,
-    background: "linear-gradient(135deg, #16a34a, #059669)",
-    borderRadius: Math.round(size * 0.28),
+    height: size,
+    background: "white", // ensures the black text is visible even on dark admin backgrounds
+    padding: Math.max(2, Math.round(size * 0.1)),
+    borderRadius: Math.round(size * 0.15),
     display: "flex", alignItems: "center", justifyContent: "center",
     flexShrink: 0,
-    boxShadow: "0 2px 8px rgba(22,163,74,0.35)",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
   }}>
-    <span style={{
-      fontFamily: "'Plus Jakarta Sans', sans-serif",
-      fontWeight: 800,
-      fontSize: Math.round(size * 0.38),
-      color: "white",
-      letterSpacing: "-0.03em",
-      lineHeight: 1,
-    }}>
-      DL
-    </span>
+    <img 
+      src="/logo.png" 
+      alt="DL4ALL Logo" 
+      style={{ 
+        height: "100%", 
+        width: "auto", 
+        objectFit: "contain" 
+      }} 
+      onError={(e) => {
+        // Fallback UI if they haven't uploaded it to public/logo.png yet
+        e.currentTarget.style.display = "none";
+        if (e.currentTarget.parentElement) {
+          e.currentTarget.parentElement.innerHTML = `<span style="font-weight: 800; font-size: ${Math.round(size*0.4)}px; color: #16a34a;">DL4ALL</span>`;
+        }
+      }}
+    />
   </div>
 );
 
-/** Full brand lockup: logo + name lines */
+/** Full brand lockup: Just the logo now, since the image contains all the text ("Digital Literacy for All, Ibadan") */
 export const AppBrand = ({ dark = false }: { dark?: boolean }) => (
-  <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-    <LogoMark size={32} />
-    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-      <span style={{
-        fontFamily: "'Plus Jakarta Sans', sans-serif",
-        fontWeight: 700, fontSize: "0.9375rem",
-        color: dark ? "#0f172a" : "white",
-        letterSpacing: "-0.02em",
-      }}>
-        DL4AIB
-      </span>
-      <span style={{ fontSize: "0.6875rem", color: dark ? "#64748b" : "rgba(255,255,255,0.4)" }}>
-        Digital Literacy for All Ibadan
-      </span>
-    </div>
+  <div style={{ display: "flex", alignItems: "center" }}>
+    <LogoMark size={44} />
   </div>
 );
