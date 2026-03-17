@@ -146,3 +146,14 @@ export async function saveSubmission(submission: Submission): Promise<void> {
     throw e;
   }
 }
+
+export async function deleteEvent(id: string): Promise<void> {
+  try {
+    await prisma.event.delete({
+      where: { id },
+    });
+  } catch (e) {
+    console.error("Failed to delete event:", e);
+    throw e;
+  }
+}

@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AdminSidebar from "@/components/AdminSidebar";
-import { getEvents, getSubmissions } from "@/lib/actions";
+import { getEvents, getSubmissions, deleteEvent } from "@/lib/actions";
 import { Submission } from "@/lib/types";
 import { Event } from "@/lib/types";
-import { IcMenu, IcPlus, IcQr, IcLink, IcCalendar, IcPin, IcRadar, IcUsers } from "@/components/Icons";
+import { IcMenu, IcPlus, IcQr, IcLink, IcCalendar, IcPin, IcRadar, IcUsers, IcTrash } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
 function AllEvents() {
@@ -31,6 +31,21 @@ function AllEvents() {
     }
     load();
   }, [isAdmin, initialized, router]);
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to completely delete the event "${name}" and all its participant data?\n\nThis cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      await deleteEvent(id);
+      setEvents((prev) => prev.filter((e) => e.id !== id));
+      setSubmissions((prev) => prev.filter((s) => s.eventId !== id));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete event. Please check your connection.");
+    }
+  };
 
   if (!initialized || !isAdmin) return null;
 
@@ -144,6 +159,14 @@ function AllEvents() {
                             <IcLink size={14} />
                             Open
                           </Link>
+                          <button 
+                            onClick={() => handleDelete(ev.id, ev.name)}
+                            className="btn btn-secondary btn-sm" 
+                            style={{ color: "var(--red-600)", background: "var(--red-50)", border: "1px solid var(--red-200)" }}
+                          >
+                            <IcTrash size={14} />
+                            Delete
+                          </button>
                         </div>
                       </div>
                     </div>
