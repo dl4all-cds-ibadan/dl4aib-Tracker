@@ -373,10 +373,10 @@ function CreateEventForm() {
       setSaving(false);
       setSuccess(id);
       setTimeout(() => router.push(`/admin/events/${id}/qr`), 1200);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to save event:", e);
       setSaving(false);
-      alert("Failed to create event. Please check your connection.");
+      alert(`Failed to create event. Error: ${e.message || "Please check your network connection."}`);
     }
   };
 
