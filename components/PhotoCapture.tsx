@@ -14,17 +14,32 @@ export default function PhotoCapture({ onCapture, captured }: Props) {
   const startCamera = useCallback(async () => {
     setError("");
     try {
+      // First try with ideal high-res constraints
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode, width: { ideal: 1280 }, height: { ideal: 960 } },
         audio: false,
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        videoRef.current.play().catch(() => {}); // handle play interrupted exceptions gracefully
         setStreaming(true);
       }
-    } catch {
-      setError("Camera access denied. Please allow camera permission in your browser settings.");
+    } catch (e1) {
+      try {
+        // Fallback: Some mobile devices fully reject requests if they don't support the requested resolution constraints
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+          audio: false,
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+          setStreaming(true);
+        }
+      } catch (e2: any) {
+        console.error("Camera error:", e2);
+        setError(`Camera access failed: ${e2.message || "Permission denied."} Please allow camera access in your browser settings or ensure you are on a secure connection (HTTPS).`);
+      }
     }
   }, [facingMode]);
 

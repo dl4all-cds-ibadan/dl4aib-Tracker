@@ -323,8 +323,8 @@ export default function EventSubmissionPage() {
                   id="stateCode"
                   className="form-input"
                   type="text"
-                  placeholder="e.g. OY, LA, AB"
-                  maxLength={4}
+                  placeholder="e.g. OY/25C/1300"
+                  maxLength={15}
                   value={form.stateCode}
                   onChange={(e) => { set("stateCode", e.target.value); setErrors((p) => ({ ...p, stateCode: "" })); }}
                   style={{ textTransform: "uppercase" }}
