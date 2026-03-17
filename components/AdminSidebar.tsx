@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { IcChart, IcPlus, IcList, IcHome, IcLogOut } from "./Icons";
+import { IcChart, IcPlus, IcList, IcHome, IcLogOut, IcUsers } from "./Icons";
 import { LogoMark } from "./AppLogo";
 
 interface Props { open: boolean; onClose: () => void; }
@@ -15,7 +15,7 @@ const navItems = [
 
 export default function AdminSidebar({ open, onClose }: Props) {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { logout, isSuperAdmin } = useAuth();
 
   return (
     <>
@@ -48,6 +48,17 @@ export default function AdminSidebar({ open, onClose }: Props) {
             </Link>
           );
         })}
+
+        {isSuperAdmin && (
+          <Link
+            href="/admin/users"
+            onClick={onClose}
+            className={`nav-link ${pathname.startsWith("/admin/users") ? "active" : ""}`}
+          >
+            <IcUsers size={15} />
+            User Management
+          </Link>
+        )}
 
         <div style={{ flex: 1 }} />
 

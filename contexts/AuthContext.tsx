@@ -1,50 +1,68 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect } from "react";
 
+import { authenticateUser } from "@/lib/actions";
+import { User } from "@/lib/types";
+
 interface AuthContextType {
   isAdmin: boolean;
+  isSuperAdmin: boolean;
+  user: User | null;
   initialized: boolean;
-  login: (email: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
+  isSuperAdmin: false,
+  user: null,
   initialized: false,
-  login: () => false,
+  login: async () => ({ success: false }),
   logout: () => {},
 });
 
-const ADMIN_EMAIL = "admin@dl4aib.org";
-const ADMIN_PASSWORD = "dl4aib2024";
-const AUTH_KEY = "dl4aib_admin_auth";
+const AUTH_KEY = "dl4aib_user_session";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem(AUTH_KEY);
-    if (stored === "true") setIsAdmin(true);
+    try {
+      const stored = localStorage.getItem(AUTH_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.id) setUser(parsed);
+      }
+    } catch {}
     setInitialized(true);
   }, []);
 
-  const login = (email: string, password: string): boolean => {
-    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-      setIsAdmin(true);
-      localStorage.setItem(AUTH_KEY, "true");
-      return true;
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    const res = await authenticateUser(email, password);
+    if (res.success && res.user) {
+      setUser(res.user);
+      localStorage.setItem(AUTH_KEY, JSON.stringify(res.user));
+      return { success: true };
     }
-    return false;
+    return { success: false, error: res.error || "Login failed" };
   };
 
   const logout = () => {
-    setIsAdmin(false);
+    setUser(null);
     localStorage.removeItem(AUTH_KEY);
   };
 
   return (
-    <AuthContext.Provider value={{ isAdmin, initialized, login, logout }}>
+    <AuthContext.Provider value={{ 
+      isAdmin: user !== null, 
+      isSuperAdmin: user?.role === "SUPERADMIN", 
+      user, 
+      initialized, 
+      login, 
+      logout 
+    }}>
       {children}
     </AuthContext.Provider>
   );

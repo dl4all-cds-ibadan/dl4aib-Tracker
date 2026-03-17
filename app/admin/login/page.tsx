@@ -19,9 +19,9 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true); setError("");
     await new Promise((r) => setTimeout(r, 350));
-    const ok = login(email, password);
-    if (ok) router.push("/admin/dashboard");
-    else setError("Incorrect email or password. Please try again.");
+    const res = await login(email, password);
+    if (res.success) router.push("/admin/dashboard");
+    else setError(res.error || "Incorrect email or password. Please try again.");
     setLoading(false);
   };
 
