@@ -4,13 +4,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AdminSidebar from "@/components/AdminSidebar";
-import { getEvents, getSubmissions } from "@/lib/actions";
+import { getEvents, getSubmissions, deleteEvent } from "@/lib/actions";
 import { Event, Submission } from "@/lib/types";
 import dynamic from "next/dynamic";
 import * as XLSX from "xlsx";
 import {
   IcMenu, IcChart, IcUsers, IcCamera, IcCalendar,
-  IcMap, IcPlus, IcLogOut, IcUser, IcFilter, IcExport,
+  IcMap, IcPlus, IcLogOut, IcUser, IcFilter, IcExport, IcTrash
 } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
@@ -41,6 +41,18 @@ function Dashboard() {
     }
     load();
   }, [isAdmin, initialized, router]);
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete the event "${name}" and all its participant data? This cannot be undone.`)) return;
+    try {
+      await deleteEvent(id);
+      setEvents(e => e.filter(x => x.id !== id));
+      setSubmissions(s => s.filter(x => x.eventId !== id));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete event. Please check your network.");
+    }
+  };
 
   const filtered = filterEvent === "all" ? submissions : submissions.filter((s) => s.eventId === filterEvent);
 
@@ -164,10 +176,6 @@ function Dashboard() {
               <div className="card-body">
                 <div className="section-header">
                   <div className="section-title">Events</div>
-                  <Link href="/admin/events/create" className="btn btn-primary btn-sm">
-                    <IcPlus size={14} />
-                    Create Event
-                  </Link>
                 </div>
 
                 {events.length === 0 ? (
@@ -223,6 +231,9 @@ function Dashboard() {
                                   <Link href={`/event/${ev.slug}`} className="btn btn-ghost btn-xs" target="_blank">
                                     Open
                                   </Link>
+                                  <button onClick={() => handleDelete(ev.id, ev.name)} className="btn btn-ghost btn-xs" style={{ color: "var(--red-600)" }}>
+                                    <IcTrash size={13} />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
