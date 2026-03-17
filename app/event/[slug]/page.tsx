@@ -362,6 +362,7 @@ export default function EventSubmissionPage() {
                 <PhotoCapture
                   onCapture={(b64) => { set("photo", b64); setErrors((p) => ({ ...p, photo: "" })); }}
                   captured={form.photo || null}
+                  eventName={event?.name}
                 />
                 {errors.photo && <p style={{ color: "var(--red-500)", fontSize: "0.78rem", marginTop: "0.375rem" }}>{errors.photo}</p>}
               </div>

@@ -2,9 +2,9 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { IcCamera, IcFlip, IcCheck, IcRefresh, IcX } from "./Icons";
 
-interface Props { onCapture: (base64: string) => void; captured: string | null; }
+interface Props { onCapture: (base64: string) => void; captured: string | null; eventName?: string; }
 
-export default function PhotoCapture({ onCapture, captured }: Props) {
+export default function PhotoCapture({ onCapture, captured, eventName = "" }: Props) {
   const videoRef    = useRef<HTMLVideoElement>(null);
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const streamRef   = useRef<MediaStream | null>(null);
@@ -97,17 +97,32 @@ export default function PhotoCapture({ onCapture, captured }: Props) {
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext("2d")!;
     ctx.drawImage(video, 0, 0);
-    // Timestamp watermark
-    const now = new Date();
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillRect(0, canvas.height - 36, canvas.width, 36);
+
+    // ── Watermark bar (bigger, 2-line) ────────────────────────────────────
+    const now    = new Date();
+    const barH   = 68;                             // taller bar
+    const barY   = canvas.height - barH;
+    // Semi-transparent dark background
+    ctx.fillStyle = "rgba(0,0,0,0.62)";
+    ctx.fillRect(0, barY, canvas.width, barH);
+    // Scale font relative to canvas width so it looks good on any resolution
+    const scale   = canvas.width / 640;
+    const titleSz = Math.round(16 * scale);        // event name — bigger
+    const subSz   = Math.round(13 * scale);        // timestamp line
+    const pad     = Math.round(12 * scale);
+    // Line 1 — event name
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 13px Inter, Arial";
-    ctx.fillText(`DL4AIB Tracker  •  ${now.toLocaleString()}`, 10, canvas.height - 12);
+    ctx.font = `bold ${titleSz}px Inter, Arial`;
+    ctx.fillText(eventName || "DL4AIB Tracker", pad, barY + titleSz + 8 * scale);
+    // Line 2 — app name + timestamp
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.font = `${subSz}px Inter, Arial`;
+    ctx.fillText(`DL4AIB Tracker  •  ${now.toLocaleString()}`, pad, barY + titleSz + subSz + 16 * scale);
+
     const base64 = canvas.toDataURL("image/jpeg", 0.82);
     onCapture(base64);
     stopCamera();
-  }, [onCapture, stopCamera]);
+  }, [onCapture, stopCamera, eventName]);
 
   const retake     = () => { onCapture(""); startCamera(); };
   const flipCamera = () => setFacingMode(p => p === "user" ? "environment" : "user");
