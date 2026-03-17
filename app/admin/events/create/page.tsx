@@ -357,7 +357,8 @@ function CreateEventForm() {
     if (!initialized || !isAdmin) return;
     setSaving(true);
     const id   = generateId();
-    const slug = slugify(form.name) || id;
+    const baseSlug = slugify(form.name) || "event";
+    const slug = `${baseSlug}-${id.substring(0, 5)}`;
     try {
       await saveEvent({
         id, slug,
