@@ -71,10 +71,6 @@ function AllEvents() {
               <p>All Events</p>
             </div>
           </div>
-          <Link href="/admin/events/create" className="btn btn-primary btn-sm">
-            <IcPlus size={14} />
-            New Event
-          </Link>
         </header>
 
         <div className="page-wrapper">
