@@ -4,13 +4,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AdminSidebar from "@/components/AdminSidebar";
-import { getEvents, getSubmissions, deleteEvent } from "@/lib/actions";
+import { getEvents, getSubmissions, deleteEvent, updateEvent } from "@/lib/actions";
 import { Event, Submission } from "@/lib/types";
 import dynamic from "next/dynamic";
 import * as XLSX from "xlsx";
 import {
   IcMenu, IcChart, IcUsers, IcCamera, IcCalendar,
-  IcMap, IcPlus, IcLogOut, IcUser, IcFilter, IcExport, IcTrash
+  IcMap, IcPlus, IcLogOut, IcUser, IcFilter, IcExport, IcTrash, IcEdit, IcCheck, IcX
 } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
@@ -26,6 +26,10 @@ function Dashboard() {
   const [activeTab, setActiveTab] = useState<"overview" | "submissions" | "map">("overview");
   const [filterEvent, setFilterEvent] = useState<string>("all");
   const [photoModal, setPhotoModal] = useState<string | null>(null);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", locationName: "", allowedRadius: "", date: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   useEffect(() => {
     if (!initialized) return;
@@ -52,6 +56,26 @@ function Dashboard() {
       console.error(e);
       alert("Failed to delete event. Please check your network.");
     }
+  };
+
+  const openEdit = (ev: Event) => {
+    setEditingEvent(ev);
+    setEditForm({ name: ev.name, locationName: ev.locationName, allowedRadius: String(ev.allowedRadius), date: ev.date });
+    setEditError("");
+  };
+
+  const handleEditSave = async () => {
+    if (!editingEvent) return;
+    const radius = parseInt(editForm.allowedRadius);
+    if (!editForm.name.trim()) { setEditError("Event name is required."); return; }
+    if (isNaN(radius) || radius < 50) { setEditError("Radius must be at least 50m."); return; }
+    setEditSaving(true);
+    try {
+      await updateEvent(editingEvent.id, { name: editForm.name.trim(), locationName: editForm.locationName.trim(), allowedRadius: radius, date: editForm.date });
+      setEvents(prev => prev.map(e => e.id === editingEvent.id ? { ...e, name: editForm.name.trim(), locationName: editForm.locationName.trim(), allowedRadius: radius, date: editForm.date } : e));
+      setEditingEvent(null);
+    } catch { setEditError("Failed to save. Check your connection."); }
+    finally { setEditSaving(false); }
   };
 
   const filtered = filterEvent === "all" ? submissions : submissions.filter((s) => s.eventId === filterEvent);
@@ -97,6 +121,53 @@ function Dashboard() {
   return (
     <div>
       <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Edit Event Modal */}
+      {editingEvent && (
+        <div onClick={() => setEditingEvent(null)} style={{
+          position:"fixed", inset:0, zIndex:999,
+          background:"rgba(0,0,0,0.55)", backdropFilter:"blur(3px)",
+          display:"flex", alignItems:"center", justifyContent:"center", padding:"1rem",
+        }}>
+          <div onClick={e => e.stopPropagation()} className="card" style={{ width:"100%", maxWidth:"440px" }}>
+            <div style={{ padding:"1.25rem 1.5rem", borderBottom:"1px solid var(--border)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div>
+                <div className="section-title">Edit Event</div>
+                <div style={{ fontSize:"0.8125rem", color:"var(--gray-400)", marginTop:"0.1rem" }}>Update event details</div>
+              </div>
+              <button onClick={() => setEditingEvent(null)} className="btn btn-ghost btn-sm" style={{ padding:"0.25rem 0.5rem" }}><IcX size={16} /></button>
+            </div>
+            <div className="card-body" style={{ display:"flex", flexDirection:"column", gap:"0.875rem" }}>
+              {editError && <div className="alert alert-error" style={{ padding:"0.625rem 0.875rem", fontSize:"0.8125rem" }}>{editError}</div>}
+              <div className="form-group" style={{ marginBottom:0 }}>
+                <label className="form-label" htmlFor="dash-edit-name">Event Name</label>
+                <input id="dash-edit-name" className="form-input" value={editForm.name} onChange={e => { setEditForm(p => ({...p, name: e.target.value})); setEditError(""); }} />
+              </div>
+              <div className="form-group" style={{ marginBottom:0 }}>
+                <label className="form-label" htmlFor="dash-edit-loc">Location Name</label>
+                <input id="dash-edit-loc" className="form-input" value={editForm.locationName} onChange={e => setEditForm(p => ({...p, locationName: e.target.value}))} />
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.75rem" }}>
+                <div className="form-group" style={{ marginBottom:0 }}>
+                  <label className="form-label" htmlFor="dash-edit-radius">Allowed Radius (m)</label>
+                  <input id="dash-edit-radius" className="form-input" type="number" min={50} max={5000} value={editForm.allowedRadius} onChange={e => { setEditForm(p => ({...p, allowedRadius: e.target.value})); setEditError(""); }} />
+                </div>
+                <div className="form-group" style={{ marginBottom:0 }}>
+                  <label className="form-label" htmlFor="dash-edit-date">Event Date</label>
+                  <input id="dash-edit-date" className="form-input" type="date" value={editForm.date} onChange={e => setEditForm(p => ({...p, date: e.target.value}))} />
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:"0.5rem", justifyContent:"flex-end", paddingTop:"0.25rem" }}>
+                <button onClick={() => setEditingEvent(null)} className="btn btn-secondary btn-sm" disabled={editSaving}>Cancel</button>
+                <button onClick={handleEditSave} className="btn btn-primary btn-sm" disabled={editSaving}>
+                  {editSaving ? <><span className="spinner" style={{ width:"0.875rem", height:"0.875rem", borderTopColor:"white" }} />Saving…</> : <><IcCheck size={13} />Save Changes</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="admin-content">
 
         {/* Header */}
@@ -224,13 +295,16 @@ function Dashboard() {
                                 <span className="badge badge-blue">{count}</span>
                               </td>
                               <td>
-                                <div style={{ display: "flex", gap: "0.375rem" }}>
+                                <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
                                   <Link href={`/admin/events/${ev.id}/qr`} className="btn btn-secondary btn-xs">
                                     QR Code
                                   </Link>
                                   <Link href={`/event/${ev.slug}`} className="btn btn-ghost btn-xs" target="_blank">
                                     Open
                                   </Link>
+                                  <button onClick={() => openEdit(ev)} className="btn btn-ghost btn-xs" style={{ color: "var(--blue-600)" }} title="Edit event">
+                                    <IcEdit size={13} />
+                                  </button>
                                   <button onClick={() => handleDelete(ev.id, ev.name)} className="btn btn-ghost btn-xs" style={{ color: "var(--red-600)" }}>
                                     <IcTrash size={13} />
                                   </button>
