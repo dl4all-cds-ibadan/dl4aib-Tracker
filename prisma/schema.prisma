@@ -1,0 +1,49 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id            String   @id // The string ID, e.g. "ev-1234abc"
+  slug          String   @unique
+  name          String
+  locationName  String
+  latitude      Float
+  longitude     Float
+  allowedRadius Int
+  date          String   // We can use String for 'YYYY-MM-DD' as currently stored, or DateTime
+  createdAt     DateTime @default(now())
+
+  submissions   Submission[]
+
+  @@map("events")
+}
+
+model Submission {
+  id           String   @id // The submission ID, e.g. "sub-5678def"
+  eventId      String
+  eventName    String
+  fullName     String
+  stateCode    String
+  gender       String
+  latitude     Float
+  longitude    Float
+  address      String?
+  photoBase64  String
+  timestamp    String
+
+  // Define the relationship to the Event model
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("submissions")
+}
