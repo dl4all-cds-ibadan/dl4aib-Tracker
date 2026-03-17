@@ -1,6 +1,8 @@
+import React from "react";
+
 // Modern SVG icon set — replaces all emojis
 interface IconProps { size?: number; className?: string; color?: string; }
-const ic = (d: string | JSX.Element) =>
+const ic = (d: string | React.ReactNode) =>
   ({ size = 16, className = "", color = "currentColor" }: IconProps) =>
     typeof d === "string" ? (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className}>

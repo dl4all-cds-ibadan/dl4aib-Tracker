@@ -130,6 +130,7 @@ export async function saveSubmission(submission: Submission): Promise<void> {
       data: {
         id: submission.id,
         eventId: submission.eventId,
+        eventName: submission.eventName,
         fullName: submission.fullName,
         stateCode: submission.stateCode,
         gender: submission.gender,
