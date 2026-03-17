@@ -60,3 +60,4 @@ export const IcMenu        = ic("M3 12h18M3 6h18M3 18h18");
 export const IcExport      = (p: IconProps) => <Icon size={p.size} className={p.className}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></Icon>;
 export const IcZap         = (p: IconProps) => <Icon size={p.size} className={p.className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Icon>;
 export const IcTrash       = (p: IconProps) => <Icon size={p.size} className={p.className}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></Icon>;
+export const IcEdit        = (p: IconProps) => <Icon size={p.size} className={p.className}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></Icon>;

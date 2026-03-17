@@ -157,3 +157,18 @@ export async function deleteEvent(id: string): Promise<void> {
     throw e;
   }
 }
+
+export async function updateEvent(
+  id: string,
+  data: { name?: string; locationName?: string; allowedRadius?: number; date?: string }
+): Promise<void> {
+  try {
+    await prisma.event.update({
+      where: { id },
+      data,
+    });
+  } catch (e) {
+    console.error("Failed to update event:", e);
+    throw e;
+  }
+}
