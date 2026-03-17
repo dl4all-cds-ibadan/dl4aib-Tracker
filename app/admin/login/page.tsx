@@ -166,12 +166,6 @@ function LoginForm() {
               }
             </button>
           </form>
-
-          {/* Demo hint */}
-          <div style={{ marginTop:"1.25rem", padding:"0.75rem", background:"rgba(34,197,94,0.07)", border:"1px solid rgba(34,197,94,0.14)", borderRadius:"var(--r-md)", fontSize:"0.75rem", color:"rgba(255,255,255,0.4)", lineHeight:1.6 }}>
-            <strong style={{ color:"rgba(255,255,255,0.55)" }}>Demo credentials</strong><br />
-            admin@dl4aib.org &nbsp;/&nbsp; dl4aib2024
-          </div>
         </div>
       </div>
     </div>
