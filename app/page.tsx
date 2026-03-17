@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { IcQr, IcPin, IcCamera, IcChart, IcZap, IcExport, IcCalendar, IcUsers } from "@/components/Icons";
+import { LogoMark } from "@/components/AppLogo";
 
 const features = [
   { Icon: IcQr,     title: "QR Code Access",     desc: "Volunteers scan a QR code to instantly open the attendance form — no app download or login needed." },
@@ -18,25 +19,6 @@ const steps = [
   { num: "4", Icon: IcChart,    title: "Analyse Results",      desc: "Admin views the map, table, and downloads the full report" },
 ];
 
-/** Logo mark — initials "DL" in a green square, no placeholder SVG */
-const LogoMark = ({ size = 32 }: { size?: number }) => (
-  <div style={{
-    width: size, height: size,
-    background: "linear-gradient(135deg, #16a34a, #059669)",
-    borderRadius: Math.round(size * 0.28),
-    display: "flex", alignItems: "center", justifyContent: "center",
-    flexShrink: 0,
-    boxShadow: `0 2px 8px rgba(22,163,74,0.35)`,
-  }}>
-    <span style={{
-      fontFamily: "'Plus Jakarta Sans', sans-serif",
-      fontWeight: 800, fontSize: size * 0.38,
-      color: "white", letterSpacing: "-0.03em", lineHeight: 1,
-    }}>
-      DL
-    </span>
-  </div>
-);
 
 export default function LandingPage() {
   const GREEN = "rgba(34,197,94,";
