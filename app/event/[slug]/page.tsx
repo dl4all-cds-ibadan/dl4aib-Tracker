@@ -2,14 +2,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { generateId, distanceMetres, isRateLimited } from "@/lib/storage";
+import { generateId, distanceMetres, isRateLimited, saveOfflineSubmission, getOfflineSubmissions, removeOfflineSubmission } from "@/lib/storage";
 import { getEventBySlug, saveSubmission } from "@/lib/actions";
-import { Event } from "@/lib/types";
+import { Event, Submission } from "@/lib/types";
 import PhotoCapture from "@/components/PhotoCapture";
 import { IcPin, IcCalendar, IcUser, IcCheck, IcRefresh, IcGps, IcLoader } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
-type Step = "loading"|"not-found"|"form"|"submitting"|"success"|"outside-radius"|"rate-limited";
+type Step = "loading"|"not-found"|"form"|"submitting"|"success"|"offline-success"|"outside-radius"|"rate-limited";
 
 interface FormState {
   fullName: string; stateCode: string;
@@ -40,6 +40,8 @@ export default function EventSubmissionPage() {
   const [gpsStatus, setGpsStatus] = useState<"idle"|"loading"|"ok"|"error">("idle");
   const [errors, setErrors] = useState<Record<string,string>>({});
   const [submittedName, setSubmittedName] = useState("");
+  const [offlineCount, setOfflineCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
 
   const [form, setForm] = useState<FormState>({
     fullName: "", stateCode: "", gender: "",
@@ -54,6 +56,7 @@ export default function EventSubmissionPage() {
       const ev = await getEventBySlug(slug);
       if (!ev) { setStep("not-found"); return; }
       setEvent(ev);
+      setOfflineCount(getOfflineSubmissions().length);
       setStep("form");
     }
     load();
@@ -101,27 +104,52 @@ export default function EventSubmissionPage() {
     if (dist > event.allowedRadius) { setStep("outside-radius"); return; }
 
     setStep("submitting");
+    const subPayload: Submission = {
+      id: generateId(), eventId: event.id, eventName: event.name,
+      fullName: form.fullName.trim(), stateCode: form.stateCode.trim().toUpperCase(),
+      gender: form.gender as "Male"|"Female"|"Prefer not to say",
+      photoBase64: form.photo, latitude: form.latitude!, longitude: form.longitude!,
+      address: form.address, timestamp: new Date().toISOString(),
+    };
+
     try {
-      await saveSubmission({
-        id: generateId(), eventId: event.id, eventName: event.name,
-        fullName: form.fullName.trim(), stateCode: form.stateCode.trim().toUpperCase(),
-        gender: form.gender as "Male"|"Female"|"Prefer not to say",
-        photoBase64: form.photo, latitude: form.latitude!, longitude: form.longitude!,
-        address: form.address, timestamp: new Date().toISOString(),
-      });
+      await saveSubmission(subPayload);
       setSubmittedName(form.fullName.trim());
       setStep("success");
     } catch (e) {
-      console.error(e);
-      setStep("form");
-      alert("Submission failed. Please check your connection and try again.");
+      console.error("Network error, saving offline:", e);
+      saveOfflineSubmission(subPayload);
+      setSubmittedName(form.fullName.trim());
+      setStep("offline-success");
+      setOfflineCount(p => p + 1);
     }
   };
 
   const resetForm = () => {
     setForm({ fullName: "", stateCode: "", gender: "", photo: "", latitude: null, longitude: null, address: "" });
     setErrors({}); setGpsStatus("idle"); setStep("form");
+    setOfflineCount(getOfflineSubmissions().length);
     setTimeout(fetchGPS, 200);
+  };
+
+  const handleSync = async () => {
+    const q = getOfflineSubmissions();
+    if (q.length === 0) return;
+    setSyncing(true);
+    let success = 0;
+    for (const sub of q) {
+      try {
+        await saveSubmission(sub);
+        removeOfflineSubmission(sub.id);
+        success++;
+      } catch (e) {
+        break; // Network still bad
+      }
+    }
+    setOfflineCount(getOfflineSubmissions().length);
+    setSyncing(false);
+    if (success > 0) alert(`Successfully synced ${success} submission(s). Offline remaining: ${q.length - success}`);
+    else alert("Network is still unreachable. Please try syncing again later.");
   };
 
   // Shared header
@@ -244,6 +272,38 @@ export default function EventSubmissionPage() {
     </div>
   );
 
+  if (step === "offline-success") return (
+    <div style={{ minHeight: "100vh", background: "var(--gray-50)" }}>
+      {header}
+      <div style={{ maxWidth: "420px", margin: "3rem auto", padding: "0 1rem" }}>
+        <div className="card fade-in">
+          <div style={{ padding: "2.5rem 1.5rem", textAlign: "center" }}>
+            <div style={{ width: "3.5rem", height: "3.5rem", borderRadius: "50%", background: "var(--yellow-100)", color: "var(--yellow-600)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.5rem" }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: "1.25rem", color: "var(--gray-900)", letterSpacing: "-0.025em", marginBottom: "0.5rem" }}>
+              Saved Offline
+            </h2>
+            <p style={{ color: "var(--gray-500)", marginBottom: "0.5rem", fontSize: "0.875rem" }}>
+              <strong style={{ color: "var(--gray-800)" }}>{submittedName}</strong> could not be uploaded due to a poor connection. It has been saved securely on this device.
+            </p>
+            <div style={{
+              background: "var(--yellow-50)", border: "1.5px solid var(--yellow-200)",
+              borderRadius: "var(--r-md)", padding: "0.625rem 1rem",
+              margin: "1rem 0 1.5rem", color: "var(--yellow-800)", fontWeight: 600, fontSize: "0.85rem",
+            }}>
+              Don't forget to push "Sync Data" when you get back online.
+            </div>
+            <button onClick={resetForm} className="btn btn-primary btn-full">
+              <IcUser size={14} />
+              Add Another Participant
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   // Main form
   return (
     <div style={{ minHeight: "100vh", background: "var(--gray-50)" }}>
@@ -270,6 +330,31 @@ export default function EventSubmissionPage() {
       </div>
 
       <div style={{ maxWidth: "540px", margin: "0 auto", padding: "1.25rem 1rem" }}>
+        {/* Offline Sync Banner */}
+        {offlineCount > 0 && (
+          <div style={{ 
+            marginBottom: "1.25rem", padding: "1rem", background: "white", 
+            border: "1.5px solid var(--yellow-400)", borderRadius: "var(--r-lg)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem",
+            boxShadow: "0 4px 12px rgba(234, 179, 8, 0.1)"
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: "0.9375rem", color: "var(--gray-900)" }}>Offline Submissions</div>
+              <div style={{ fontSize: "0.8125rem", color: "var(--gray-500)", marginTop: "0.125rem" }}>
+                You have <strong>{offlineCount}</strong> pending records.
+              </div>
+            </div>
+            <button 
+              onClick={handleSync} 
+              disabled={syncing}
+              className="btn btn-primary btn-sm"
+              style={{ background: "var(--yellow-500)", color: "white", boxShadow: "none" }}
+            >
+              {syncing ? <><span className="spinner" style={{ width: "14px", height: "14px", borderTopColor: "white" }} />Syncing</> : <><IcRefresh size={14} /> Sync Now</>}
+            </button>
+          </div>
+        )}
+
         {/* GPS status */}
         <div className={`alert ${gpsStatus === "ok" ? "alert-success" : gpsStatus === "error" ? "alert-error" : "alert-info"}`} style={{ marginBottom: "1.25rem" }}>
           {gpsStatus === "loading" && (

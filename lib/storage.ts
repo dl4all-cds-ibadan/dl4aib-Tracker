@@ -57,6 +57,32 @@ export function saveSubmission(submission: Submission): void {
   localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(submissions));
 }
 
+// ─── Offline Queuing ────────────────────────────────────────────────────────────
+const OFFLINE_KEY = "dl4aib_offline_queue";
+
+export function saveOfflineSubmission(submission: Submission): void {
+  if (!isBrowser()) return;
+  const q = getOfflineSubmissions();
+  q.push(submission);
+  localStorage.setItem(OFFLINE_KEY, JSON.stringify(q));
+}
+
+export function getOfflineSubmissions(): Submission[] {
+  if (!isBrowser()) return [];
+  try {
+    const raw = localStorage.getItem(OFFLINE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function removeOfflineSubmission(id: string): void {
+  if (!isBrowser()) return;
+  const q = getOfflineSubmissions().filter((s) => s.id !== id);
+  localStorage.setItem(OFFLINE_KEY, JSON.stringify(q));
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 export function generateId(): string {
   return Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
