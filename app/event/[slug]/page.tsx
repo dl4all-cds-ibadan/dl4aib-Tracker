@@ -78,6 +78,7 @@ export default function EventSubmissionPage() {
     );
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (step === "form") fetchGPS(); }, [step, fetchGPS]);
 
   const validate = () => {

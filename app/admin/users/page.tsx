@@ -25,18 +25,18 @@ function ManageUsers() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!initialized) return;
-    if (!isSuperAdmin) { router.push("/admin/dashboard"); return; }
-    load();
-  }, [isSuperAdmin, initialized, router]);
-
   async function load() {
     setLoading(true);
     const data = await getUsers();
     setUsers(data);
     setLoading(false);
   }
+
+  useEffect(() => {
+    if (!initialized) return;
+    if (!isSuperAdmin) { router.push("/admin/dashboard"); return; }
+    load();
+  }, [isSuperAdmin, initialized, router]);
 
   const handleAdd = async () => {
     setError("");
@@ -113,7 +113,7 @@ function ManageUsers() {
               </div>
               <div className="form-group" style={{ marginBottom:0 }}>
                 <label className="form-label">Role</label>
-                <select className="form-input" value={addForm.role} onChange={e => setAddForm(p => ({...p, role: e.target.value as any}))}>
+                <select className="form-input" value={addForm.role} onChange={e => setAddForm(p => ({...p, role: e.target.value as "SUPERADMIN" | "ADMIN"}))}>
                   <option value="ADMIN">Admin</option>
                   <option value="SUPERADMIN">Super Admin</option>
                 </select>

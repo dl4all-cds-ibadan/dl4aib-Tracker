@@ -37,7 +37,7 @@ export default function PhotoCapture({ onCapture, captured, eventName = "" }: Pr
     ];
 
     let stream: MediaStream | null = null;
-    let lastErr: any = null;
+    let lastErr: unknown = null;
 
     for (const c of constraints) {
       try {
@@ -50,7 +50,8 @@ export default function PhotoCapture({ onCapture, captured, eventName = "" }: Pr
 
     if (!stream) {
       console.error("All camera attempts failed:", lastErr);
-      setError(`Camera error: ${lastErr?.message || "Permission denied"}. Please allow camera access in your browser settings.`);
+      const errMsg = lastErr instanceof Error ? lastErr.message : "Permission denied";
+      setError(`Camera error: ${errMsg}. Please allow camera access in your browser settings.`);
       return;
     }
 

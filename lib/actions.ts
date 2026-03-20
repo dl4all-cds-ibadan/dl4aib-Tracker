@@ -9,7 +9,7 @@ export async function getEvents(): Promise<Event[]> {
     const rawEvents = await prisma.event.findMany({
       orderBy: { createdAt: "desc" },
     });
-    return rawEvents.map((r: any) => ({
+    return rawEvents.map((r) => ({
       ...r,
       createdAt: r.createdAt.toISOString(),
     }));
@@ -81,13 +81,13 @@ export async function getSubmissions(): Promise<Submission[]> {
     const raw = await prisma.submission.findMany({
       orderBy: { timestamp: "desc" },
     });
-    return raw.map((r: any) => ({
+    return raw.map((r) => ({
       id: r.id,
       eventId: r.eventId,
       eventName: r.eventName,
       fullName: r.fullName,
       stateCode: r.stateCode,
-      gender: r.gender as any,
+      gender: r.gender as "Male" | "Female" | "Prefer not to say",
       latitude: r.latitude,
       longitude: r.longitude,
       address: r.address || undefined,
@@ -106,13 +106,13 @@ export async function getSubmissionsByEvent(eventId: string): Promise<Submission
       where: { eventId },
       orderBy: { timestamp: "desc" },
     });
-    return raw.map((r: any) => ({
+    return raw.map((r) => ({
       id: r.id,
       eventId: r.eventId,
       eventName: r.eventName,
       fullName: r.fullName,
       stateCode: r.stateCode,
-      gender: r.gender as any,
+      gender: r.gender as "Male" | "Female" | "Prefer not to say",
       latitude: r.latitude,
       longitude: r.longitude,
       address: r.address || undefined,
@@ -183,7 +183,7 @@ export async function getUsers(): Promise<User[]> {
     const rawUsers = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
     });
-    return rawUsers.map((r: any) => ({
+    return rawUsers.map((r) => ({
       ...r,
       role: r.role as "SUPERADMIN" | "ADMIN",
       createdAt: r.createdAt.toISOString(),

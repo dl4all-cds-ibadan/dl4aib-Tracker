@@ -25,6 +25,7 @@ function QRPage() {
   useEffect(() => {
     if (!initialized) return;
     if (!isAdmin) { router.push("/admin/login"); return; }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOrigin(window.location.origin);
     
     async function load() {

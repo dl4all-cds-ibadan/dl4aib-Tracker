@@ -1,3 +1,4 @@
+/* eslint-disable react/display-name */
 import React from "react";
 
 // Modern SVG icon set — replaces all emojis

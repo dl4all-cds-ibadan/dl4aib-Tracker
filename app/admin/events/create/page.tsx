@@ -33,8 +33,11 @@ function LocationMapPicker({
   onNameSuggestion?: (name: string) => void;
 }) {
   const mapRef      = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const leafletMap  = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markerRef   = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const iconRef     = useRef<any>(null);
 
   /* search state */
@@ -58,6 +61,7 @@ function LocationMapPicker({
       if (!active || !mapRef.current) return;
       
       // Additional safety check to prevent double-initialization
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((mapRef.current as any)._leaflet_id) {
         return;
       }
@@ -80,7 +84,7 @@ function LocationMapPicker({
         markerRef.current = L.marker([lat, lng], { icon }).addTo(map);
       }
 
-      map.on("click", (e: any) => {
+      map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
         const { lat: clickLat, lng: clickLng } = e.latlng;
         onPick(clickLat, clickLng);
         if (markerRef.current) {
@@ -373,10 +377,11 @@ function CreateEventForm() {
       setSaving(false);
       setSuccess(id);
       setTimeout(() => router.push(`/admin/events/${id}/qr`), 1200);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Failed to save event:", e);
       setSaving(false);
-      alert(`Failed to create event. Error: ${e.message || "Please check your network connection."}`);
+      const errMsg = e instanceof Error ? e.message : "Please check your network connection.";
+      alert(`Failed to create event. Error: ${errMsg}`);
     }
   };
 
