@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AdminSidebar from "@/components/AdminSidebar";
-import { IcMenu, IcUsers, IcPlus, IcTrash, IcLock, IcCheck, IcX } from "@/components/Icons";
+import { IcMenu, IcPlus, IcTrash, IcLock, IcX } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 import { getUsers, createUser, deleteUser, changeUserPassword } from "@/lib/actions";
 import { User } from "@/lib/types";
@@ -24,6 +24,9 @@ function ManageUsers() {
   const [passForm, setPassForm] = useState({ password: "" });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -35,7 +38,7 @@ function ManageUsers() {
   useEffect(() => {
     if (!initialized) return;
     if (!isSuperAdmin) { router.push("/admin/dashboard"); return; }
-    load();
+    (async () => { await load(); })();
   }, [isSuperAdmin, initialized, router]);
 
   const handleAdd = async () => {
@@ -74,12 +77,16 @@ function ManageUsers() {
   };
 
   const handleDelete = async (user: User) => {
-    if (!confirm(`Are you sure you want to delete ${user.name}? They will lose access immediately.`)) return;
+    setDeleting(true);
+    setDeleteError("");
     try {
       await deleteUser(user.id);
       await load();
+      setDeletingUser(null);
     } catch {
-      alert("Failed to delete user.");
+      setDeleteError("Failed to delete user. Please check your connection.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -88,6 +95,54 @@ function ManageUsers() {
   return (
     <div>
       <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Delete User Confirm Modal */}
+      {deletingUser && (
+        <div onClick={() => { if (!deleting) setDeletingUser(null); }} style={{
+          position: "fixed", inset: 0, zIndex: 999,
+          background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem",
+        }}>
+          <div onClick={e => e.stopPropagation()} className="card" style={{ width: "100%", maxWidth: "420px", animation: "fadeIn 0.15s ease" }}>
+            <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div className="section-title" style={{ color: "var(--red-600)" }}>Remove Admin</div>
+                <div style={{ fontSize: "0.8125rem", color: "var(--gray-400)", marginTop: "0.1rem" }}>This action cannot be undone</div>
+              </div>
+              <button onClick={() => setDeletingUser(null)} className="btn btn-ghost btn-sm" style={{ padding: "0.25rem 0.5rem" }} disabled={deleting}>
+                <IcX size={16} />
+              </button>
+            </div>
+            <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {deleteError && (
+                <div className="alert alert-error" style={{ padding: "0.625rem 0.875rem", fontSize: "0.8125rem" }}>{deleteError}</div>
+              )}
+              <p style={{ color: "var(--gray-600)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+                Are you sure you want to remove{" "}
+                <strong style={{ color: "var(--gray-900)" }}>{deletingUser.name}</strong>?
+                <br />
+                <span style={{ color: "var(--red-500)", fontSize: "0.8125rem" }}>
+                  They will immediately lose access to the admin dashboard.
+                </span>
+              </p>
+              <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+                <button onClick={() => setDeletingUser(null)} className="btn btn-secondary btn-sm" disabled={deleting}>Cancel</button>
+                <button
+                  onClick={() => handleDelete(deletingUser)}
+                  className="btn btn-sm"
+                  disabled={deleting}
+                  style={{ background: "var(--red-600)", color: "white", border: "none" }}
+                >
+                  {deleting
+                    ? <><span className="spinner" style={{ width: "0.875rem", height: "0.875rem", borderTopColor: "white" }} />Removing&hellip;</>
+                    : <><IcTrash size={13} />Remove Admin</>
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Admin Modal */}
       {showAdd && (
@@ -193,7 +248,7 @@ function ManageUsers() {
             {loading ? (
               <div style={{ padding: "3rem", textAlign: "center", color: "var(--gray-400)" }}>Loading users...</div>
             ) : (
-              <div className="table-wrapper">
+              <div className="data-table-wrap">
                  <table className="data-table">
                   <thead>
                     <tr>
@@ -206,18 +261,18 @@ function ManageUsers() {
                   <tbody>
                     {users.map(u => (
                       <tr key={u.id}>
-                        <td style={{ fontWeight: 600, color: "var(--gray-900)" }}>{u.name}</td>
+                        <td style={{ fontWeight: 600, color: "var(--gray-900)", whiteSpace: "nowrap" }}>{u.name}</td>
                         <td style={{ color: "var(--gray-500)" }}>{u.email}</td>
                         <td>
                           <span className={`badge ${u.role === "SUPERADMIN" ? "badge-blue" : "badge-gray"}`}>{u.role}</span>
                         </td>
-                        <td>
+                        <td style={{ whiteSpace: "nowrap" }}>
                           <div style={{ display: "flex", gap: "0.5rem" }}>
                             <button onClick={() => { setShowPass(u.id); setError(""); setPassForm({password:""}); }} className="btn btn-secondary btn-xs" title="Change Password">
                               <IcLock size={13} /> Password
                             </button>
                             {u.role !== "SUPERADMIN" && (
-                              <button onClick={() => handleDelete(u)} className="btn btn-ghost btn-xs" style={{ color: "var(--red-600)" }}>
+                              <button onClick={() => { setDeleteError(""); setDeletingUser(u); }} className="btn btn-ghost btn-xs" style={{ color: "var(--red-600)" }}>
                                 <IcTrash size={13} />
                               </button>
                             )}

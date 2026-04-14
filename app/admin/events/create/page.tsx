@@ -32,21 +32,21 @@ function LocationMapPicker({
   onPick: (lat: number, lng: number) => void;
   onNameSuggestion?: (name: string) => void;
 }) {
-  const mapRef      = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const leafletMap  = useRef<any>(null);
+  const leafletMap = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const markerRef   = useRef<any>(null);
+  const markerRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const iconRef     = useRef<any>(null);
+  const iconRef = useRef<any>(null);
 
   /* search state */
-  const [query,       setQuery]       = useState("");
-  const [results,     setResults]     = useState<NominatimResult[]>([]);
-  const [searching,   setSearching]   = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<NominatimResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ── Init Leaflet map ── */
   useEffect(() => {
@@ -59,7 +59,7 @@ function LocationMapPicker({
 
     import("leaflet").then((L) => {
       if (!active || !mapRef.current) return;
-      
+
       // Additional safety check to prevent double-initialization
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((mapRef.current as any)._leaflet_id) {
@@ -67,9 +67,9 @@ function LocationMapPicker({
       }
 
       const icon = L.icon({
-        iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
         iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-        shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
         iconSize: [25, 41], iconAnchor: [12, 41],
         popupAnchor: [1, -34], shadowSize: [41, 41],
       });
@@ -99,12 +99,12 @@ function LocationMapPicker({
 
     return () => {
       active = false;
-      if (leafletMap.current) { 
-        leafletMap.current.remove(); 
-        leafletMap.current = null; 
+      if (leafletMap.current) {
+        leafletMap.current.remove();
+        leafletMap.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ── Sync external lat/lng (from "Use My Location") ── */
@@ -334,7 +334,7 @@ function CreateEventForm() {
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const handleMapPick = useCallback((lat: number, lng: number) => {
-    set("latitude",  lat.toFixed(6));
+    set("latitude", lat.toFixed(6));
     set("longitude", lng.toFixed(6));
   }, []);
 
@@ -348,7 +348,7 @@ function CreateEventForm() {
     setGettingLocation(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        set("latitude",  pos.coords.latitude.toFixed(6));
+        set("latitude", pos.coords.latitude.toFixed(6));
         set("longitude", pos.coords.longitude.toFixed(6));
         setGettingLocation(false);
       },
@@ -360,7 +360,7 @@ function CreateEventForm() {
     e.preventDefault();
     if (!initialized || !isAdmin) return;
     setSaving(true);
-    const id   = generateId();
+    const id = generateId();
     const baseSlug = slugify(form.name) || "event";
     const slug = `${baseSlug}-${id.substring(0, 5)}`;
     try {
@@ -368,10 +368,11 @@ function CreateEventForm() {
         id, slug,
         name: form.name.trim(),
         locationName: form.locationName.trim(),
-        latitude:  parseFloat(form.latitude),
+        latitude: parseFloat(form.latitude),
         longitude: parseFloat(form.longitude),
         allowedRadius: parseInt(form.allowedRadius),
         date: form.date,
+        isOpen: true,
         createdAt: new Date().toISOString(),
       });
       setSaving(false);

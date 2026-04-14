@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AdminSidebar from "@/components/AdminSidebar";
-import { getEvents, getSubmissions, deleteEvent, updateEvent } from "@/lib/actions";
+import { getEvents, getSubmissions, deleteEvent, updateEvent, toggleEventOpen } from "@/lib/actions";
 import { Submission, Event } from "@/lib/types";
-import { IcMenu, IcPlus, IcQr, IcLink, IcCalendar, IcPin, IcRadar, IcUsers, IcTrash, IcEdit, IcCheck, IcX } from "@/components/Icons";
+import { IcMenu, IcPlus, IcQr, IcLink, IcCalendar, IcPin, IcRadar, IcUsers, IcTrash, IcEdit, IcCheck, IcX, IcLock } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
 /* ── Inline Edit Modal ─────────────────────────────────────────────────── */
@@ -128,6 +128,94 @@ function EditModal({ event, onClose, onSaved }: {
   );
 }
 
+/* ── Delete Confirm Modal ──────────────────────────────────────────────── */
+function DeleteConfirmModal({ event, onClose, onConfirm }: {
+  event: Event;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await onConfirm();
+      onClose();
+    } catch {
+      setError("Failed to delete event. Please check your connection.");
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 999,
+        background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        className="card"
+        style={{ width: "100%", maxWidth: "420px", animation: "fadeIn 0.15s ease" }}
+      >
+        {/* Header */}
+        <div style={{
+          padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div className="section-title" style={{ color: "var(--red-600)" }}>Delete Event</div>
+            <div style={{ fontSize: "0.8125rem", color: "var(--gray-400)", marginTop: "0.1rem" }}>
+              This action cannot be undone
+            </div>
+          </div>
+          <button onClick={onClose} className="btn btn-ghost btn-sm" style={{ padding: "0.25rem 0.5rem" }} disabled={deleting}>
+            <IcX size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {error && (
+            <div className="alert alert-error" style={{ padding: "0.625rem 0.875rem", fontSize: "0.8125rem" }}>
+              {error}
+            </div>
+          )}
+          <p style={{ color: "var(--gray-600)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+            Are you sure you want to permanently delete{" "}
+            <strong style={{ color: "var(--gray-900)" }}>&ldquo;{event.name}&rdquo;</strong>?
+            <br />
+            <span style={{ color: "var(--red-500)", fontSize: "0.8125rem" }}>
+              All participant data for this event will also be deleted.
+            </span>
+          </p>
+
+          <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+            <button onClick={onClose} className="btn btn-secondary btn-sm" disabled={deleting}>
+              Cancel
+            </button>
+            <button
+              onClick={handleDelete}
+              className="btn btn-sm"
+              disabled={deleting}
+              style={{ background: "var(--red-600)", color: "white", border: "none" }}
+            >
+              {deleting
+                ? <><span className="spinner" style={{ width: "0.875rem", height: "0.875rem", borderTopColor: "white" }} />Deleting…</>
+                : <><IcTrash size={13} />Delete Event</>
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Page ─────────────────────────────────────────────────────────── */
 function AllEvents() {
   const { isAdmin, initialized } = useAuth();
@@ -135,7 +223,9 @@ function AllEvents() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [events,      setEvents]      = useState<Event[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [editingEvent,  setEditingEvent]  = useState<Event | null>(null);
+  const [deletingEvent, setDeletingEvent] = useState<Event | null>(null);
+  const [togglingId,    setTogglingId]    = useState<string | null>(null);
 
   useEffect(() => {
     if (!initialized) return;
@@ -148,19 +238,30 @@ function AllEvents() {
     load();
   }, [isAdmin, initialized, router]);
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to completely delete the event "${name}" and all its participant data?\n\nThis cannot be undone.`)) return;
+  const handleDelete = async (id: string) => {
     try {
       await deleteEvent(id);
       setEvents(prev => prev.filter(e => e.id !== id));
       setSubmissions(prev => prev.filter(s => s.eventId !== id));
     } catch {
-      alert("Failed to delete event. Please check your connection.");
+      throw new Error("Delete failed");
     }
   };
 
   const handleSaved = (id: string, updated: Partial<Event>) => {
     setEvents(prev => prev.map(e => e.id === id ? { ...e, ...updated } : e));
+  };
+
+  const handleToggleOpen = async (ev: Event) => {
+    setTogglingId(ev.id);
+    try {
+      await toggleEventOpen(ev.id, !ev.isOpen);
+      setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, isOpen: !ev.isOpen } : e));
+    } catch {
+      alert("Failed to update event status. Please check your connection.");
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   if (!initialized || !isAdmin) return null;
@@ -173,6 +274,15 @@ function AllEvents() {
           event={editingEvent}
           onClose={() => setEditingEvent(null)}
           onSaved={(updated) => { handleSaved(editingEvent.id, updated); setEditingEvent(null); }}
+        />
+      )}
+
+      {/* Delete confirm modal */}
+      {deletingEvent && (
+        <DeleteConfirmModal
+          event={deletingEvent}
+          onClose={() => setDeletingEvent(null)}
+          onConfirm={() => handleDelete(deletingEvent.id)}
         />
       )}
 
@@ -223,7 +333,7 @@ function AllEvents() {
                 return (
                   <div key={ev.id} className="card fade-in" style={{ animationDelay: `${i * 0.04}s` }}>
                     <div className="card-body" style={{ padding: "1.25rem 1.5rem" }}>
-                      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
                         {/* Icon */}
                         <div style={{
                           width: "44px", height: "44px", flexShrink: 0,
@@ -244,6 +354,11 @@ function AllEvents() {
                             <span className={`badge ${isPast ? "badge-gray" : "badge-green"}`}>
                               {isPast ? "Past" : "Upcoming"}
                             </span>
+                            <span className={`badge ${ev.isOpen ? "badge-green" : "badge-gray"}`}
+                              style={ev.isOpen ? {} : { background: "var(--yellow-50)", color: "var(--yellow-700)", border: "1px solid var(--yellow-200)" }}
+                            >
+                              {ev.isOpen ? "Open" : "Closed"}
+                            </span>
                           </div>
                           <div style={{ display: "flex", gap: "1.25rem", flexWrap: "wrap" }}>
                             <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: "var(--gray-500)", fontSize: "0.8125rem" }}>
@@ -260,32 +375,51 @@ function AllEvents() {
                             </span>
                           </div>
                         </div>
+                      </div>
 
-                        {/* Actions */}
-                        <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0, flexWrap: "wrap" }}>
-                          <Link href={`/admin/events/${ev.id}/qr`} className="btn btn-primary btn-sm">
-                            <IcQr size={14} /> QR Code
-                          </Link>
-                          <Link href={`/event/${ev.slug}`} className="btn btn-secondary btn-sm" target="_blank">
-                            <IcLink size={14} /> Open
-                          </Link>
-                          <button
-                            onClick={() => setEditingEvent(ev)}
-                            className="btn btn-secondary btn-sm"
-                            style={{ color: "var(--blue-600)", background: "var(--blue-50)", border: "1px solid var(--blue-200)" }}
-                            title="Edit event"
-                          >
-                            <IcEdit size={14} /> Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(ev.id, ev.name)}
-                            className="btn btn-secondary btn-sm"
-                            style={{ color: "var(--red-600)", background: "var(--red-50)", border: "1px solid var(--red-200)" }}
-                            title="Delete event"
-                          >
-                            <IcTrash size={14} /> Delete
-                          </button>
-                        </div>
+                      {/* Actions row — full width below info */}
+                      <div style={{
+                        display: "flex", gap: "0.5rem", flexWrap: "wrap",
+                        marginTop: "1rem", paddingTop: "0.875rem",
+                        borderTop: "1px solid var(--border)",
+                      }}>
+                        <Link href={`/admin/events/${ev.id}/qr`} className="btn btn-primary btn-sm">
+                          <IcQr size={14} /> QR Code
+                        </Link>
+                        <Link href={`/event/${ev.slug}`} className="btn btn-secondary btn-sm" target="_blank">
+                          <IcLink size={14} /> Open
+                        </Link>
+                        <button
+                          onClick={() => handleToggleOpen(ev)}
+                          disabled={togglingId === ev.id}
+                          className="btn btn-secondary btn-sm"
+                          style={ev.isOpen
+                            ? { color: "var(--yellow-700)", background: "var(--yellow-50)", border: "1px solid var(--yellow-200)" }
+                            : { color: "var(--accent-700)", background: "var(--accent-50)", border: "1px solid var(--accent-200)" }
+                          }
+                          title={ev.isOpen ? "Close event (stop accepting submissions)" : "Reopen event (allow submissions)"}
+                        >
+                          {togglingId === ev.id
+                            ? <span className="spinner" style={{ width: "0.875rem", height: "0.875rem" }} />
+                            : <><IcLock size={14} />{ev.isOpen ? "Close" : "Reopen"}</>
+                          }
+                        </button>
+                        <button
+                          onClick={() => setEditingEvent(ev)}
+                          className="btn btn-secondary btn-sm"
+                          style={{ color: "var(--blue-600)", background: "var(--blue-50)", border: "1px solid var(--blue-200)" }}
+                          title="Edit event"
+                        >
+                          <IcEdit size={14} /> Edit
+                        </button>
+                        <button
+                          onClick={() => setDeletingEvent(ev)}
+                          className="btn btn-secondary btn-sm"
+                          style={{ color: "var(--red-600)", background: "var(--red-50)", border: "1px solid var(--red-200)" }}
+                          title="Delete event"
+                        >
+                          <IcTrash size={14} /> Delete
+                        </button>
                       </div>
                     </div>
                   </div>

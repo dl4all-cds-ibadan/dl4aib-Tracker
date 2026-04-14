@@ -31,7 +31,7 @@ export const LogoMark = ({ size = 32 }: LogoMarkProps) => (
 );
 
 /** Full brand lockup: Just the logo now, since the image contains all the text ("Digital Literacy for All, Ibadan") */
-export const AppBrand = ({ dark = false }: { dark?: boolean }) => (
+export const AppBrand = ({}: { dark?: boolean }) => (
   <div style={{ display: "flex", alignItems: "center" }}>
     <LogoMark size={44} />
   </div>

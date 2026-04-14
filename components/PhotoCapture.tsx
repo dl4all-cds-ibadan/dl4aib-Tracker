@@ -176,7 +176,12 @@ export default function PhotoCapture({ onCapture, captured, eventName = "" }: Pr
           autoPlay
           playsInline
           muted
-          style={{ width: "100%", height: "100%", objectFit: "cover", display: streaming ? "block" : "none" }}
+          style={{
+            width: "100%", height: "100%", objectFit: "cover",
+            display: streaming ? "block" : "none",
+            // Mirror preview for front camera so it feels like a selfie
+            transform: facingMode === "user" ? "scaleX(-1)" : "none",
+          }}
         />
 
         {!streaming && (

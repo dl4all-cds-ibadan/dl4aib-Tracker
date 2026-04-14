@@ -8,6 +8,7 @@ export interface Event {
   date: string; // ISO date string
   slug: string;
   createdAt: string;
+  isOpen: boolean;
   participantCount?: number;
 }
 

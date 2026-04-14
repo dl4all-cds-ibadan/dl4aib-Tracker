@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { IcQr, IcPin, IcCamera, IcChart, IcZap, IcExport, IcCalendar, IcUsers } from "@/components/Icons";
+import { IcQr, IcPin, IcCamera, IcChart, IcZap, IcExport, IcCalendar } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
 const features = [

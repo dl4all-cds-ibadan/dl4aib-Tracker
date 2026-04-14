@@ -11,6 +11,7 @@ export async function getEvents(): Promise<Event[]> {
     });
     return rawEvents.map((r) => ({
       ...r,
+      isOpen: r.isOpen,
       createdAt: r.createdAt.toISOString(),
     }));
   } catch (e) {
@@ -31,6 +32,7 @@ export async function saveEvent(event: Event): Promise<void> {
         longitude: event.longitude,
         allowedRadius: event.allowedRadius,
         date: event.date,
+        isOpen: event.isOpen,
       },
       create: {
         id: event.id,
@@ -41,6 +43,7 @@ export async function saveEvent(event: Event): Promise<void> {
         longitude: event.longitude,
         allowedRadius: event.allowedRadius,
         date: event.date,
+        isOpen: event.isOpen,
         createdAt: new Date(event.createdAt),
       },
     });
@@ -56,7 +59,7 @@ export async function getEventBySlug(slug: string): Promise<Event | null> {
       where: { slug },
     });
     if (!r) return null;
-    return { ...r, createdAt: r.createdAt.toISOString() };
+    return { ...r, isOpen: r.isOpen, createdAt: r.createdAt.toISOString() };
   } catch (e) {
     console.error("Failed to fetch event by slug:", e);
     return null;
@@ -69,7 +72,7 @@ export async function getEventById(id: string): Promise<Event | null> {
       where: { id },
     });
     if (!r) return null;
-    return { ...r, createdAt: r.createdAt.toISOString() };
+    return { ...r, isOpen: r.isOpen, createdAt: r.createdAt.toISOString() };
   } catch (e) {
     console.error("Failed to fetch event by id:", e);
     return null;
@@ -125,7 +128,34 @@ export async function getSubmissionsByEvent(eventId: string): Promise<Submission
   }
 }
 
-export async function saveSubmission(submission: Submission): Promise<void> {
+/** Returns true if `stateCode` has already been submitted for this event */
+export async function checkDuplicateStateCode(
+  eventId: string,
+  stateCode: string
+): Promise<boolean> {
+  try {
+    const existing = await prisma.submission.findFirst({
+      where: {
+        eventId,
+        stateCode: { equals: stateCode.trim().toUpperCase(), mode: "insensitive" },
+      },
+    });
+    return existing !== null;
+  } catch (e) {
+    console.error("Failed to check duplicate state code:", e);
+    return false; // On error, allow submission to proceed
+  }
+}
+
+export type SaveResult =
+  | { ok: true }
+  | { ok: false; duplicate: true }
+  | { ok: false; duplicate: false; error: unknown };
+
+/** Saves a submission, always uppercasing the stateCode first.
+ *  Returns a typed result instead of throwing so callers can handle
+ *  the duplicate-stateCode case without a generic try/catch. */
+export async function saveSubmission(submission: Submission): Promise<SaveResult> {
   try {
     await prisma.submission.create({
       data: {
@@ -133,7 +163,7 @@ export async function saveSubmission(submission: Submission): Promise<void> {
         eventId: submission.eventId,
         eventName: submission.eventName,
         fullName: submission.fullName,
-        stateCode: submission.stateCode,
+        stateCode: submission.stateCode.trim().toUpperCase(), // always normalise
         gender: submission.gender,
         latitude: submission.latitude,
         longitude: submission.longitude,
@@ -142,9 +172,17 @@ export async function saveSubmission(submission: Submission): Promise<void> {
         timestamp: submission.timestamp,
       },
     });
-  } catch (e) {
+    return { ok: true };
+  } catch (e: unknown) {
+    // Prisma unique-constraint violation → P2002
+    if (
+      e instanceof Error &&
+      (e as { code?: string }).code === "P2002"
+    ) {
+      return { ok: false, duplicate: true };
+    }
     console.error("Failed to save submission:", e);
-    throw e;
+    return { ok: false, duplicate: false, error: e };
   }
 }
 
@@ -155,6 +193,17 @@ export async function deleteEvent(id: string): Promise<void> {
     });
   } catch (e) {
     console.error("Failed to delete event:", e);
+    throw e;
+  }
+}
+
+export async function deleteSubmission(id: string): Promise<void> {
+  try {
+    await prisma.submission.delete({
+      where: { id },
+    });
+  } catch (e) {
+    console.error("Failed to delete submission:", e);
     throw e;
   }
 }
@@ -170,6 +219,18 @@ export async function updateEvent(
     });
   } catch (e) {
     console.error("Failed to update event:", e);
+    throw e;
+  }
+}
+
+export async function toggleEventOpen(id: string, isOpen: boolean): Promise<void> {
+  try {
+    await prisma.event.update({
+      where: { id },
+      data: { isOpen },
+    });
+  } catch (e) {
+    console.error("Failed to toggle event open state:", e);
     throw e;
   }
 }
@@ -244,7 +305,7 @@ export async function authenticateUser(email: string, passwordPlain: string): Pr
 
     const passwordsMatch = await bcrypt.compare(passwordPlain, user.passwordHash);
     if (!passwordsMatch) return { success: false, error: "Invalid email or password" };
-    
+
     return {
       success: true,
       user: {

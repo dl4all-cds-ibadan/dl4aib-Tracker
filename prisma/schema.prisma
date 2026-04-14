@@ -21,6 +21,7 @@ model Event {
   longitude     Float
   allowedRadius Int
   date          String   // We can use String for 'YYYY-MM-DD' as currently stored, or DateTime
+  isOpen        Boolean  @default(true)
   createdAt     DateTime @default(now())
 
   submissions   Submission[]

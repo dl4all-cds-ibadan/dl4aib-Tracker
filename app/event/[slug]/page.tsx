@@ -6,10 +6,10 @@ import { generateId, distanceMetres, isRateLimited, saveOfflineSubmission, getOf
 import { getEventBySlug, saveSubmission } from "@/lib/actions";
 import { Event, Submission } from "@/lib/types";
 import PhotoCapture from "@/components/PhotoCapture";
-import { IcPin, IcCalendar, IcUser, IcCheck, IcRefresh, IcGps, IcLoader } from "@/components/Icons";
+import { IcPin, IcCalendar, IcUser, IcCheck, IcRefresh, IcGps, IcLoader, IcLock } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
-type Step = "loading"|"not-found"|"form"|"submitting"|"success"|"offline-success"|"outside-radius"|"rate-limited";
+type Step = "loading"|"not-found"|"event-closed"|"form"|"submitting"|"success"|"offline-success"|"outside-radius"|"rate-limited";
 
 interface FormState {
   fullName: string; stateCode: string;
@@ -55,6 +55,7 @@ export default function EventSubmissionPage() {
     async function load() {
       const ev = await getEventBySlug(slug);
       if (!ev) { setStep("not-found"); return; }
+      if (!ev.isOpen) { setEvent(ev); setStep("event-closed"); return; }
       setEvent(ev);
       setOfflineCount(getOfflineSubmissions().length);
       setStep("form");
@@ -142,7 +143,7 @@ export default function EventSubmissionPage() {
         await saveSubmission(sub);
         removeOfflineSubmission(sub.id);
         success++;
-      } catch (e) {
+      } catch {
         break; // Network still bad
       }
     }
@@ -165,6 +166,26 @@ export default function EventSubmissionPage() {
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "6rem 1rem", gap: "1rem" }}>
         <span className="spinner" style={{ width: "2rem", height: "2rem", borderTopColor: "var(--brand-500)" }} />
         <p style={{ color: "var(--gray-500)", fontSize: "0.875rem" }}>Loading event…</p>
+      </div>
+    </div>
+  );
+
+  if (step === "event-closed") return (
+    <div style={{ minHeight: "100vh", background: "var(--gray-50)" }}>
+      {header}
+      <div style={{ maxWidth: "420px", margin: "5rem auto", padding: "0 1rem", textAlign: "center" }}>
+        <div style={{ width: "4rem", height: "4rem", background: "var(--yellow-50)", borderRadius: "var(--r-xl)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.25rem", color: "var(--yellow-600)" }}>
+          <IcLock size={26} />
+        </div>
+        <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, color: "var(--gray-900)", fontSize: "1.25rem", marginBottom: "0.5rem", letterSpacing: "-0.025em" }}>
+          Event Closed
+        </h2>
+        <p style={{ color: "var(--gray-500)", marginBottom: "0.25rem", lineHeight: 1.6 }}>
+          <strong style={{ color: "var(--gray-800)" }}>{event?.name}</strong>
+        </p>
+        <p style={{ color: "var(--gray-400)", fontSize: "0.875rem", lineHeight: 1.6 }}>
+          This event is no longer accepting submissions. Contact your event organiser if you think this is a mistake.
+        </p>
       </div>
     </div>
   );
@@ -292,7 +313,7 @@ export default function EventSubmissionPage() {
               borderRadius: "var(--r-md)", padding: "0.625rem 1rem",
               margin: "1rem 0 1.5rem", color: "var(--yellow-800)", fontWeight: 600, fontSize: "0.85rem",
             }}>
-              Don't forget to push "Sync Data" when you get back online.
+              Don&apos;t forget to push &quot;Sync Data&quot; when you get back online.
             </div>
             <button onClick={resetForm} className="btn btn-primary btn-full">
               <IcUser size={14} />
