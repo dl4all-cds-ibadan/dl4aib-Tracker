@@ -99,20 +99,3 @@ export default function QRCodeDisplay({ url, eventName, size = 260 }: Props) {
     </div>
   );
 }
-        </div >
-      </div >
-
-  {/* Actions */ }
-  < div style = {{ display: "flex", gap: "0.625rem", flexWrap: "wrap", justifyContent: "center" }}>
-        <button onClick={download} className="btn btn-primary btn-sm">
-          <IcDownload size={14} />
-          Download
-        </button>
-        <button onClick={share} className="btn btn-secondary btn-sm">
-          <IcShare size={14} />
-          {copied ? "Link Copied!" : "Share QR + Link"}
-        </button>
-      </div >
-    </div >
-  );
-}
