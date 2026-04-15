@@ -87,12 +87,19 @@ export default function QRCodeDisplay({ url, eventName, size = 260 }: Props) {
     const qrCanvas = canvasRef.current;
     if (!qrCanvas) return null;
 
-    const pad    = 32;
-    const qrSize = qrCanvas.width;
-    const W      = qrSize + pad * 2;
+    // Load logo image first
+    const logo = await new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.onload  = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = "/logo.png";
+    });
 
-    const headerH = 56;   // green brand bar at top
-    const footerH = 72;   // event name + url at bottom
+    const pad     = 32;
+    const qrSize  = qrCanvas.width;
+    const W       = qrSize + pad * 2;
+    const headerH = 64;   // brand bar
+    const footerH = 80;   // event name + url
     const H = headerH + pad + qrSize + pad + footerH;
 
     const card = document.createElement("canvas");
@@ -100,49 +107,55 @@ export default function QRCodeDisplay({ url, eventName, size = 260 }: Props) {
     card.height = H;
     const ctx = card.getContext("2d")!;
 
-    // ── White card background ──────────────────────────────────────
+    // ── White card background ────────────────────────────────────────
     ctx.fillStyle = "#ffffff";
     ctx.roundRect(0, 0, W, H, 16);
     ctx.fill();
 
-    // ── Green header bar ──────────────────────────────────────────
+    // ── Dark green header bar ────────────────────────────────────────
     ctx.fillStyle = "#052e16";
     ctx.beginPath();
     ctx.roundRect(0, 0, W, headerH, [16, 16, 0, 0]);
     ctx.fill();
 
-    // Logo circle
-    const cx = 28, cy = headerH / 2, r = 14;
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grad.addColorStop(0, "#22c55e");
-    grad.addColorStop(1, "#059669");
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-
-    // Pin icon in logo
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(cx, cy - 2, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(cx, cy + 7);
-    ctx.lineTo(cx - 4, cy - 1);
-    ctx.lineTo(cx + 4, cy - 1);
-    ctx.closePath();
-    ctx.fill();
+    // Logo image (circular clip) OR fallback green circle
+    const logoSize = 36;
+    const logoX = 16;
+    const logoY = (headerH - logoSize) / 2;
+    if (logo) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(logo, logoX, logoY, logoSize, logoSize);
+      ctx.restore();
+    } else {
+      // Fallback: green gradient circle with "D"
+      const ccx = logoX + logoSize / 2, ccy = logoY + logoSize / 2;
+      const g = ctx.createRadialGradient(ccx, ccy, 0, ccx, ccy, logoSize / 2);
+      g.addColorStop(0, "#22c55e"); g.addColorStop(1, "#059669");
+      ctx.beginPath(); ctx.arc(ccx, ccy, logoSize / 2, 0, Math.PI * 2);
+      ctx.fillStyle = g; ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.font = `bold ${logoSize * 0.5}px Arial`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("D", ccx, ccy);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    }
 
     // Brand text
+    const textX = logoX + logoSize + 10;
+    const cy = headerH / 2;
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 15px 'Plus Jakarta Sans', Inter, Arial, sans-serif";
-    ctx.fillText("DL4AIB Tracker", 50, cy - 3);
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.fillText("DL4AIB Tracker", textX, cy - 2);
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
     ctx.font = "11px Inter, Arial, sans-serif";
-    ctx.fillText("Scan to record attendance", 50, cy + 11);
+    ctx.fillText("Scan to record attendance", textX, cy + 13);
 
-    // ── QR code ───────────────────────────────────────────────────
+    // ── QR code ─────────────────────────────────────────────────────
     ctx.drawImage(qrCanvas, pad, headerH + pad);
 
-    // ── Footer ────────────────────────────────────────────────────
+    // ── Footer ───────────────────────────────────────────────────────
     const footerY = headerH + pad + qrSize + pad;
 
     // Event name
@@ -150,22 +163,26 @@ export default function QRCodeDisplay({ url, eventName, size = 260 }: Props) {
     ctx.font = "bold 15px Inter, Arial, sans-serif";
     let name = eventName;
     while (ctx.measureText(name).width > W - pad * 2 && name.length > 4)
-      name = name.slice(0, -4) + "…";
-    ctx.fillText(name, pad, footerY + 18);
+      name = name.slice(0, -4) + "\u2026";
+    ctx.fillText(name, pad, footerY + 20);
 
     // URL
     ctx.fillStyle = "#64748b";
     ctx.font = "11px Inter, Arial, sans-serif";
     let shortUrl = url;
     while (ctx.measureText(shortUrl).width > W - pad * 2 && shortUrl.length > 8)
-      shortUrl = shortUrl.slice(0, -4) + "…";
-    ctx.fillText(shortUrl, pad, footerY + 38);
+      shortUrl = shortUrl.slice(0, -4) + "\u2026";
+    ctx.fillText(shortUrl, pad, footerY + 42);
 
-    // Green bottom accent line
+    // Instruction line
     ctx.fillStyle = "#16a34a";
-    ctx.fillRect(pad, footerY + 56, W - pad * 2, 3);
+    ctx.font = "bold 11px Inter, Arial, sans-serif";
+    ctx.fillText("Scan the QR code or click the link to mark your attendance", pad, footerY + 62);
 
-    // Convert to File
+    // Green bottom accent
+    ctx.fillStyle = "#16a34a";
+    ctx.fillRect(0, H - 4, W, 4);
+
     return new Promise((resolve) => {
       card.toBlob((blob) => {
         if (!blob) { resolve(null); return; }
@@ -182,7 +199,7 @@ export default function QRCodeDisplay({ url, eventName, size = 260 }: Props) {
       try {
         await navigator.share({
           title: eventName,
-          text: `Scan the QR code to register for "${eventName}"`,
+          text: `Scan the QR code or click the link to mark your attendance`,
           url,
           files: [file],
         });
