@@ -99,26 +99,48 @@ export default function PhotoCapture({ onCapture, captured, eventName = "" }: Pr
     const ctx = canvas.getContext("2d")!;
     ctx.drawImage(video, 0, 0);
 
-    // ── Watermark bar (bigger, 2-line) ────────────────────────────────────
+    // ── Watermark bar (3 lines: event, date, time) ────────────────────────
     const now = new Date();
-    const barH = 68;                             // taller bar
+    const dateStr = now.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
+    const timeStr = now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    // Scale fonts relative to canvas width (designed for 640px baseline)
+    const scale   = canvas.width / 640;
+    const titleSz = Math.round(17 * scale);   // event name
+    const dateSz  = Math.round(14 * scale);   // date line
+    const timeSz  = Math.round(20 * scale);   // time — big & bold
+    const pad     = Math.round(14 * scale);
+    const lineGap = Math.round(6  * scale);
+
+    const barH = Math.round((titleSz + dateSz + timeSz + lineGap * 4 + pad * 2));
     const barY = canvas.height - barH;
-    // Semi-transparent dark background
-    ctx.fillStyle = "rgba(0,0,0,0.62)";
+
+    // Dark semi-transparent background
+    ctx.fillStyle = "rgba(0,0,0,0.70)";
     ctx.fillRect(0, barY, canvas.width, barH);
-    // Scale font relative to canvas width so it looks good on any resolution
-    const scale = canvas.width / 640;
-    const titleSz = Math.round(16 * scale);        // event name — bigger
-    const subSz = Math.round(13 * scale);        // timestamp line
-    const pad = Math.round(12 * scale);
-    // Line 1 — event name
+
+    // Green accent strip at top of bar
+    ctx.fillStyle = "#16a34a";
+    ctx.fillRect(0, barY, canvas.width, Math.round(3 * scale));
+
+    let y = barY + pad + titleSz;
+
+    // Line 1 — Event name (white, bold)
     ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${titleSz}px Inter, Arial`;
-    ctx.fillText(eventName || "DL4AIB Tracker", pad, barY + titleSz + 8 * scale);
-    // Line 2 — app name + timestamp
-    ctx.fillStyle = "rgba(255,255,255,0.65)";
-    ctx.font = `${subSz}px Inter, Arial`;
-    ctx.fillText(`DL4AIB Tracker  •  ${now.toLocaleString()}`, pad, barY + titleSz + subSz + 16 * scale);
+    ctx.font = `bold ${titleSz}px Inter, Arial, sans-serif`;
+    ctx.fillText(eventName || "DL4AIB Tracker", pad, y);
+    y += dateSz + lineGap;
+
+    // Line 2 — Date (muted)
+    ctx.fillStyle = "rgba(255,255,255,0.60)";
+    ctx.font = `${dateSz}px Inter, Arial, sans-serif`;
+    ctx.fillText(dateStr, pad, y);
+    y += timeSz + lineGap;
+
+    // Line 3 — Time (large, bright green)
+    ctx.fillStyle = "#4ade80";
+    ctx.font = `bold ${timeSz}px Inter, Arial, sans-serif`;
+    ctx.fillText(timeStr, pad, y);
 
     const base64 = canvas.toDataURL("image/jpeg", 0.82);
     onCapture(base64);

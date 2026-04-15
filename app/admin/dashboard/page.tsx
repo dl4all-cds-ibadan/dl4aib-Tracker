@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AdminSidebar from "@/components/AdminSidebar";
-import { getEvents, getSubmissions, deleteEvent, updateEvent } from "@/lib/actions";
+import { getEvents, getSubmissions, deleteEvent, updateEvent, deleteSubmission } from "@/lib/actions";
 import { Event, Submission } from "@/lib/types";
 import dynamic from "next/dynamic";
 import * as XLSX from "xlsx";
@@ -30,6 +30,8 @@ function Dashboard() {
   const [editForm, setEditForm] = useState({ name: "", locationName: "", allowedRadius: "", date: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [deletingSubId, setDeletingSubId] = useState<string | null>(null);
+  const [confirmSub, setConfirmSub] = useState<Submission | null>(null);
 
   useEffect(() => {
     if (!initialized) return;
@@ -55,6 +57,20 @@ function Dashboard() {
     } catch (e) {
       console.error(e);
       alert("Failed to delete event. Please check your network.");
+    }
+  };
+
+  const handleDeleteSubmission = async (sub: Submission) => {
+    setDeletingSubId(sub.id);
+    try {
+      await deleteSubmission(sub.id);
+      setSubmissions(s => s.filter(x => x.id !== sub.id));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete submission. Please check your network.");
+    } finally {
+      setDeletingSubId(null);
+      setConfirmSub(null);
     }
   };
 
@@ -375,6 +391,7 @@ function Dashboard() {
                           <th>Event</th>
                           <th>Time</th>
                           <th>Coordinates</th>
+                          <th></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -409,6 +426,16 @@ function Dashboard() {
                             </td>
                             <td style={{ fontSize: "0.75rem", color: "var(--gray-400)", fontFamily: "monospace" }}>
                               {s.latitude.toFixed(5)}, {s.longitude.toFixed(5)}
+                            </td>
+                            <td>
+                              <button
+                                onClick={() => setConfirmSub(s)}
+                                className="btn btn-ghost btn-xs"
+                                style={{ color: "var(--red-600)" }}
+                                title="Delete fraudulent entry"
+                              >
+                                <IcTrash size={13} />
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -447,6 +474,44 @@ function Dashboard() {
         <div className="modal-backdrop" onClick={() => setPhotoModal(null)}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: "var(--r-xl)", overflow: "hidden" }}>
             <img src={photoModal} alt="Participant photo" style={{ width: "100%", height: "auto", display: "block" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Delete Submission Modal */}
+      {confirmSub && (
+        <div onClick={() => setConfirmSub(null)} style={{
+          position: "fixed", inset: 0, zIndex: 999,
+          background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem",
+        }}>
+          <div onClick={e => e.stopPropagation()} className="card" style={{ width: "100%", maxWidth: "400px" }}>
+            <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem" }}>
+                <div style={{ width: "44px", height: "44px", flexShrink: 0, background: "var(--red-50)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--red-600)" }}>
+                  <IcTrash size={20} />
+                </div>
+                <div>
+                  <div className="section-title" style={{ marginBottom: "0.375rem" }}>Delete Submission?</div>
+                  <p style={{ fontSize: "0.875rem", color: "var(--gray-500)", lineHeight: 1.6 }}>
+                    Remove <strong style={{ color: "var(--gray-900)" }}>{confirmSub.fullName}</strong> ({confirmSub.stateCode}) from <strong style={{ color: "var(--gray-900)" }}>{confirmSub.eventName}</strong>? This cannot be undone.
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+                <button onClick={() => setConfirmSub(null)} className="btn btn-secondary btn-sm" disabled={deletingSubId === confirmSub.id}>Cancel</button>
+                <button
+                  onClick={() => handleDeleteSubmission(confirmSub)}
+                  className="btn btn-danger btn-sm"
+                  disabled={deletingSubId === confirmSub.id}
+                >
+                  {deletingSubId === confirmSub.id
+                    ? <><span className="spinner" style={{ width: "0.875rem", height: "0.875rem", borderTopColor: "white" }} />Deleting…</>
+                    : <><IcTrash size={13} />Delete Entry</>
+                  }
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
