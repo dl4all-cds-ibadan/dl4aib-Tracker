@@ -27,6 +27,10 @@ npx prisma generate
 
 New events start with both attendance forms closed. Open each form separately from **Admin → All Events** when attendance should begin. A participant is marked present only after both records exist.
 
+## Initial admin account
+
+Set `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, and `BOOTSTRAP_ADMIN_PASSWORD` in your ignored `.env.local` file, then run `node scripts/seed.mjs` once to create the initial Super Admin and sign in at `/admin/login`. The script refuses to run if the users table already contains accounts. Passwords shorter than 12 characters are accepted only when `DATABASE_URL` points to a local database.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

@@ -155,6 +155,67 @@ export async function checkDuplicateStateCode(
   }
 }
 
+export interface AttendanceSnapshot {
+  timestamp: string;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+export type AttendanceRoute = ({
+  status: "open";
+  phase: AttendancePhase;
+} | {
+  status: "complete";
+} | {
+  status: "closed";
+}) & {
+  preOpen: boolean;
+  postOpen: boolean;
+  pre?: AttendanceSnapshot;
+  post?: AttendanceSnapshot;
+};
+
+export async function getAttendanceRoute(
+  eventId: string,
+  stateCode: string
+): Promise<AttendanceRoute> {
+  try {
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: { isOpen: true, preOutreachOpen: true, postOutreachOpen: true },
+    });
+    if (!event || !event.isOpen) {
+      return { status: "closed", preOpen: false, postOpen: false };
+    }
+
+    const existing = await prisma.submission.findMany({
+      where: {
+        eventId,
+        stateCode: { equals: stateCode.trim().toUpperCase(), mode: "insensitive" },
+      },
+      select: { phase: true, timestamp: true, address: true, latitude: true, longitude: true },
+    });
+    const pre = existing.find((submission) => submission.phase === "PRE_OUTREACH");
+    const post = existing.find((submission) => submission.phase === "POST_OUTREACH");
+    const preComplete = pre !== undefined;
+    const postComplete = post !== undefined;
+    const access = { preOpen: event.preOutreachOpen, postOpen: event.postOutreachOpen };
+    const snapshots = {
+      ...(pre ? { pre: { timestamp: pre.timestamp, address: pre.address, latitude: pre.latitude, longitude: pre.longitude } } : {}),
+      ...(post ? { post: { timestamp: post.timestamp, address: post.address, latitude: post.latitude, longitude: post.longitude } } : {}),
+    };
+
+    if (preComplete && postComplete) return { status: "complete", ...access, ...snapshots };
+    if (event.preOutreachOpen && !preComplete) return { status: "open", phase: "PRE_OUTREACH", ...access, ...snapshots };
+    if (event.postOutreachOpen && !postComplete) return { status: "open", phase: "POST_OUTREACH", ...access, ...snapshots };
+    return { status: "closed", ...access, ...snapshots };
+  } catch (e) {
+    console.error("Failed to resolve participant attendance stage:", e);
+    throw e;
+  }
+}
+
 export type SaveResult =
   | { ok: true; postOutreachOpen: boolean }
   | { ok: false; reason: "duplicate"; postOutreachOpen: boolean }
@@ -288,7 +349,9 @@ export async function toggleAttendancePhase(
   try {
     await prisma.event.update({
       where: { id },
-      data: phase === "PRE_OUTREACH" ? { preOutreachOpen: isOpen } : { postOutreachOpen: isOpen },
+      data: phase === "PRE_OUTREACH"
+        ? { preOutreachOpen: isOpen }
+        : { postOutreachOpen: isOpen },
     });
   } catch (e) {
     console.error("Failed to toggle attendance phase:", e);

@@ -3,13 +3,13 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { generateId, distanceMetres, isRateLimited, saveOfflineSubmission, getOfflineSubmissions, removeOfflineSubmission } from "@/lib/storage";
-import { getEventBySlug, saveSubmission } from "@/lib/actions";
+import { getAttendanceRoute, getEventBySlug, saveSubmission, type AttendanceSnapshot } from "@/lib/actions";
 import { AttendancePhase, Event, Submission } from "@/lib/types";
 import PhotoCapture from "@/components/PhotoCapture";
 import { IcPin, IcCalendar, IcUser, IcCheck, IcRefresh, IcGps, IcLoader, IcLock } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
-type Step = "loading"|"not-found"|"event-closed"|"phase-closed"|"form"|"submitting"|"success"|"offline-success"|"outside-radius"|"rate-limited";
+type Step = "loading"|"not-found"|"event-closed"|"phase-closed"|"already-complete"|"form"|"submitting"|"success"|"offline-success"|"outside-radius"|"rate-limited";
 
 interface FormState {
   fullName: string; stateCode: string;
@@ -31,6 +31,48 @@ const AppLogo = () => (
   </div>
 );
 
+function AttendanceSummary({
+  pre,
+  post,
+  preOpen,
+  postOpen,
+}: {
+  pre?: AttendanceSnapshot;
+  post?: AttendanceSnapshot;
+  preOpen: boolean;
+  postOpen: boolean;
+}) {
+  const rows: { title: string; snapshot?: AttendanceSnapshot; open: boolean }[] = [
+    { title: "Pre-Outreach", snapshot: pre, open: preOpen },
+    { title: "Post-Outreach", snapshot: post, open: postOpen },
+  ];
+  const complete = Boolean(pre && post);
+
+  return (
+    <div style={{ textAlign: "left", margin: "1.25rem 0", padding: "1rem", background: "var(--gray-50)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
+      <div style={{ fontWeight: 700, color: complete ? "var(--accent-700)" : "var(--gray-800)", marginBottom: "0.75rem" }}>
+        {complete ? "Attendance complete — both forms recorded" : "Attendance records"}
+      </div>
+      {rows.map(({ title, snapshot, open }) => (
+        <div key={title} style={{ padding: "0.625rem 0", borderTop: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap", fontWeight: 600, color: "var(--gray-800)" }}>
+            <span>{title}</span>
+            <span style={{ color: snapshot ? "var(--accent-600)" : "var(--gray-500)" }}>
+              {snapshot ? `Complete · Form ${open ? "open" : "closed"}` : `Not recorded · Form ${open ? "open" : "closed"}`}
+            </span>
+          </div>
+          {snapshot && (
+            <div style={{ color: "var(--gray-500)", fontSize: "0.78rem", marginTop: "0.25rem", lineHeight: 1.5 }}>
+              <div>{new Date(snapshot.timestamp).toLocaleString()}</div>
+              <div>{snapshot.address || `${snapshot.latitude.toFixed(5)}, ${snapshot.longitude.toFixed(5)}`}</div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function EventSubmissionPage() {
   const params = useParams();
   const slug = params.slug as string;
@@ -42,6 +84,10 @@ export default function EventSubmissionPage() {
   const [errors, setErrors] = useState<Record<string,string>>({});
   const [submittedName, setSubmittedName] = useState("");
   const [preOutreachRecorded, setPreOutreachRecorded] = useState(false);
+  const [attendanceSnapshots, setAttendanceSnapshots] = useState<{
+    pre?: AttendanceSnapshot;
+    post?: AttendanceSnapshot;
+  }>({});
   const [offlineCount, setOfflineCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [stageNotice, setStageNotice] = useState("");
@@ -54,20 +100,64 @@ export default function EventSubmissionPage() {
   const set = (k: keyof FormState, v: string|number|null) =>
     setForm((p) => ({ ...p, [k]: v }));
 
+  const routeForStateCode = useCallback(async (ev: Event, stateCode: string) => {
+    const route = await getAttendanceRoute(ev.id, stateCode);
+    setAttendanceSnapshots({ pre: route.pre, post: route.post });
+    setPreOutreachRecorded(Boolean(route.pre));
+    setEvent((current) => current ? {
+      ...current,
+      preOutreachOpen: route.preOpen,
+      postOutreachOpen: route.postOpen,
+    } : current);
+    if (route.status === "complete") {
+      setStep("already-complete");
+      return;
+    }
+    if (route.status === "closed") {
+      setStep("phase-closed");
+      return;
+    }
+    if (route.phase !== phase) {
+      setPhase(route.phase);
+      setForm((previous) => ({ ...previous, photo: "", latitude: null, longitude: null, address: "" }));
+      setGpsStatus("idle");
+      setStageNotice(route.phase === "POST_OUTREACH"
+        ? "Pre-Outreach attendance is already recorded or closed. Continue with Post-Outreach attendance."
+        : "");
+    }
+    setStep("form");
+  }, [phase]);
+
   useEffect(() => {
     async function load() {
       const ev = await getEventBySlug(slug);
       if (!ev) { setStep("not-found"); return; }
       if (!ev.isOpen) { setEvent(ev); setStep("event-closed"); return; }
       setEvent(ev);
-      if (ev.preOutreachOpen) setPhase("PRE_OUTREACH");
-      else if (ev.postOutreachOpen) setPhase("POST_OUTREACH");
-      else { setStep("phase-closed"); return; }
       setOfflineCount(getOfflineSubmissions().length);
-      setStep("form");
+      const savedStateCode = sessionStorage.getItem(`dl4aib_statecode_${slug}`) ?? "";
+      if (savedStateCode) {
+        setForm((previous) => ({ ...previous, stateCode: savedStateCode }));
+        try {
+          await routeForStateCode(ev, savedStateCode);
+        } catch (error) {
+          console.error("Unable to resolve attendance stage:", error);
+          setErrors({ submit: "Could not check existing attendance. Refresh and try again." });
+          setPhase(ev.preOutreachOpen ? "PRE_OUTREACH" : "POST_OUTREACH");
+          setStep("form");
+        }
+      } else if (ev.preOutreachOpen) {
+        setPhase("PRE_OUTREACH");
+        setStep("form");
+      } else if (ev.postOutreachOpen) {
+        setPhase("POST_OUTREACH");
+        setStep("form");
+      } else {
+        setStep("phase-closed");
+      }
     }
     load();
-  }, [slug]);
+  }, [routeForStateCode, slug]);
 
   const fetchGPS = useCallback(() => {
     if (!navigator.geolocation) { setGpsStatus("error"); return; }
@@ -89,7 +179,17 @@ export default function EventSubmissionPage() {
   }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { if (step === "form") fetchGPS(); }, [step, fetchGPS]);
+  useEffect(() => { if (step === "form") fetchGPS(); }, [step, phase, fetchGPS]);
+
+  const handleStateCodeBlur = async () => {
+    if (!event || !form.stateCode.trim()) return;
+    try {
+      await routeForStateCode(event, form.stateCode);
+    } catch (error) {
+      console.error("Unable to resolve attendance stage:", error);
+      setErrors((previous) => ({ ...previous, submit: "Could not check existing attendance. Please try again." }));
+    }
+  };
 
   const validate = () => {
     const errs: Record<string,string> = {};
@@ -149,7 +249,13 @@ export default function EventSubmissionPage() {
           return;
         }
         if (result.reason === "closed") {
-          setStep("phase-closed");
+          const refreshedEvent = await getEventBySlug(slug);
+          if (refreshedEvent?.isOpen && form.stateCode.trim()) {
+            setEvent(refreshedEvent);
+            await routeForStateCode(refreshedEvent, form.stateCode);
+          } else {
+            setStep("phase-closed");
+          }
           return;
         }
         if (result.reason === "duplicate") {
@@ -171,6 +277,15 @@ export default function EventSubmissionPage() {
         setStageNotice("Pre-Outreach attendance recorded. Now complete Post-Outreach attendance for this participant.");
         setStep("form");
       } else {
+        if (phase === "POST_OUTREACH") {
+          try {
+            const route = await getAttendanceRoute(event.id, form.stateCode);
+            setAttendanceSnapshots({ pre: route.pre, post: route.post });
+            setPreOutreachRecorded(Boolean(route.pre));
+          } catch (error) {
+            console.error("Failed to load attendance confirmation details:", error);
+          }
+        }
         setStep("success");
       }
     } catch (e) {
@@ -181,7 +296,9 @@ export default function EventSubmissionPage() {
 
   const resetForm = () => {
     setForm({ fullName: "", stateCode: "", gender: "", photo: "", latitude: null, longitude: null, address: "" });
+    sessionStorage.removeItem(`dl4aib_statecode_${slug}`);
     setPreOutreachRecorded(false);
+    setAttendanceSnapshots({});
     setErrors({}); setGpsStatus("idle"); setStep("form");
     setOfflineCount(getOfflineSubmissions().length);
     setTimeout(fetchGPS, 200);
@@ -266,6 +383,32 @@ export default function EventSubmissionPage() {
         <p style={{ color: "var(--gray-500)", lineHeight: 1.6 }}>
           Both Pre-Outreach and Post-Outreach attendance are currently closed for {event?.name}. Contact the event organiser.
         </p>
+      </div>
+    </div>
+  );
+
+  if (step === "already-complete") return (
+    <div style={{ minHeight: "100vh", background: "var(--gray-50)" }}>
+      {header}
+      <div style={{ maxWidth: "420px", margin: "5rem auto", padding: "0 1rem", textAlign: "center" }}>
+        <div className="success-check" style={{ margin: "0 auto 1.25rem" }}>
+          <IcCheck size={26} color="white" />
+        </div>
+        <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, color: "var(--gray-900)", fontSize: "1.25rem", marginBottom: "0.5rem" }}>
+          Attendance Already Complete
+        </h2>
+        <p style={{ color: "var(--gray-500)", lineHeight: 1.6 }}>
+          Both Pre-Outreach and Post-Outreach attendance have already been recorded for this state code at {event?.name}.
+        </p>
+        <AttendanceSummary
+          pre={attendanceSnapshots.pre}
+          post={attendanceSnapshots.post}
+          preOpen={event?.preOutreachOpen ?? false}
+          postOpen={event?.postOutreachOpen ?? false}
+        />
+        <button onClick={resetForm} className="btn btn-primary" style={{ marginTop: "1.25rem" }}>
+          <IcUser size={14} /> Add Another Participant
+        </button>
       </div>
     </div>
   );
@@ -360,6 +503,14 @@ export default function EventSubmissionPage() {
             }}>
               {event?.name}
             </div>
+            {phase === "POST_OUTREACH" && (
+              <AttendanceSummary
+                pre={attendanceSnapshots.pre}
+                post={attendanceSnapshots.post}
+                preOpen={event?.preOutreachOpen ?? false}
+                postOpen={event?.postOutreachOpen ?? false}
+              />
+            )}
             {phase === "PRE_OUTREACH" && !event?.postOutreachOpen && (
               <p style={{ color: "var(--yellow-600)", fontSize: "0.8125rem", marginBottom: "1rem" }}>
                 Post-Outreach attendance is currently closed. This participant is not yet marked present.
@@ -467,6 +618,14 @@ export default function EventSubmissionPage() {
             {stageNotice}
           </div>
         )}
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+          <span className={`badge ${event?.preOutreachOpen ? "badge-green" : "badge-gray"}`}>
+            Pre-Outreach: {event?.preOutreachOpen ? "Open" : "Closed"}
+          </span>
+          <span className={`badge ${event?.postOutreachOpen ? "badge-green" : "badge-gray"}`}>
+            Post-Outreach: {event?.postOutreachOpen ? "Open" : "Closed"}
+          </span>
+        </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.75rem" }}>
           <span className={`badge ${phase === "PRE_OUTREACH" ? "badge-blue" : "badge-green"}`}>
             {phase === "PRE_OUTREACH" ? "Pre-Outreach" : "Post-Outreach"} · {phase === "PRE_OUTREACH" ? "1" : "2"} of 2
@@ -494,7 +653,7 @@ export default function EventSubmissionPage() {
           <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)" }}>
             <div className="section-title">{phase === "PRE_OUTREACH" ? "Pre-Outreach Attendance" : "Post-Outreach Attendance"}</div>
             <p style={{ color: "var(--gray-500)", fontSize: "0.875rem", marginTop: "0.2rem" }}>
-              Fill in participant details and capture a live photo at the {phase === "PRE_OUTREACH" ? "start" : "end"} of the outreach.
+              You are filling the {phase === "PRE_OUTREACH" ? "Pre-Outreach" : "Post-Outreach"} attendance form, which is currently open. Pre-Outreach is {event?.preOutreachOpen ? "open" : "closed"} and Post-Outreach is {event?.postOutreachOpen ? "open" : "closed"}. Capture the participant&apos;s attendance at the {phase === "PRE_OUTREACH" ? "start" : "end"} of the outreach.
             </p>
           </div>
           <div className="card-body">
@@ -529,7 +688,14 @@ export default function EventSubmissionPage() {
                   placeholder="e.g. OY/25C/1300"
                   maxLength={15}
                   value={form.stateCode}
-                  onChange={(e) => { set("stateCode", e.target.value); setErrors((p) => ({ ...p, stateCode: "" })); }}
+                  onChange={(e) => {
+                    const stateCode = e.target.value;
+                    set("stateCode", stateCode);
+                    setErrors((p) => ({ ...p, stateCode: "" }));
+                    if (stateCode.trim()) sessionStorage.setItem(`dl4aib_statecode_${slug}`, stateCode);
+                    else sessionStorage.removeItem(`dl4aib_statecode_${slug}`);
+                  }}
+                  onBlur={handleStateCodeBlur}
                   style={{ textTransform: "uppercase" }}
                 />
                 {errors.stateCode && <p style={{ color: "var(--red-500)", fontSize: "0.78rem", marginTop: "0.25rem" }}>{errors.stateCode}</p>}

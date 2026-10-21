@@ -270,7 +270,11 @@ function AllEvents() {
     setTogglingId(`${ev.id}:${phase}`);
     try {
       await toggleAttendancePhase(ev.id, phase, next);
-      setEvents(prev => prev.map(event => event.id === ev.id ? { ...event, [field]: next } : event));
+      setEvents(prev => prev.map(event => event.id === ev.id
+        ? phase === "PRE_OUTREACH"
+          ? { ...event, preOutreachOpen: next }
+          : { ...event, postOutreachOpen: next }
+        : event));
     } catch {
       alert(`Failed to update ${phase === "PRE_OUTREACH" ? "Pre" : "Post"} Outreach access.`);
     } finally {
