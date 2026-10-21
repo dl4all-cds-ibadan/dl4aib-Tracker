@@ -4,12 +4,12 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { generateId, distanceMetres, isRateLimited, saveOfflineSubmission, getOfflineSubmissions, removeOfflineSubmission } from "@/lib/storage";
 import { getEventBySlug, saveSubmission } from "@/lib/actions";
-import { Event, Submission } from "@/lib/types";
+import { AttendancePhase, Event, Submission } from "@/lib/types";
 import PhotoCapture from "@/components/PhotoCapture";
 import { IcPin, IcCalendar, IcUser, IcCheck, IcRefresh, IcGps, IcLoader, IcLock } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
-type Step = "loading"|"not-found"|"event-closed"|"form"|"submitting"|"success"|"offline-success"|"outside-radius"|"rate-limited";
+type Step = "loading"|"not-found"|"event-closed"|"phase-closed"|"form"|"submitting"|"success"|"offline-success"|"outside-radius"|"rate-limited";
 
 interface FormState {
   fullName: string; stateCode: string;
@@ -36,12 +36,15 @@ export default function EventSubmissionPage() {
   const slug = params.slug as string;
 
   const [event, setEvent] = useState<Event|null>(null);
+  const [phase, setPhase] = useState<AttendancePhase>("PRE_OUTREACH");
   const [step, setStep] = useState<Step>("loading");
   const [gpsStatus, setGpsStatus] = useState<"idle"|"loading"|"ok"|"error">("idle");
   const [errors, setErrors] = useState<Record<string,string>>({});
   const [submittedName, setSubmittedName] = useState("");
+  const [preOutreachRecorded, setPreOutreachRecorded] = useState(false);
   const [offlineCount, setOfflineCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [stageNotice, setStageNotice] = useState("");
 
   const [form, setForm] = useState<FormState>({
     fullName: "", stateCode: "", gender: "",
@@ -57,6 +60,9 @@ export default function EventSubmissionPage() {
       if (!ev) { setStep("not-found"); return; }
       if (!ev.isOpen) { setEvent(ev); setStep("event-closed"); return; }
       setEvent(ev);
+      if (ev.preOutreachOpen) setPhase("PRE_OUTREACH");
+      else if (ev.postOutreachOpen) setPhase("POST_OUTREACH");
+      else { setStep("phase-closed"); return; }
       setOfflineCount(getOfflineSubmissions().length);
       setStep("form");
     }
@@ -100,7 +106,7 @@ export default function EventSubmissionPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!event || !validate()) return;
-    if (isRateLimited(event.id)) { setStep("rate-limited"); return; }
+    if (isRateLimited(event.id, phase)) { setStep("rate-limited"); return; }
     const dist = distanceMetres(event.latitude, event.longitude, form.latitude!, form.longitude!);
     if (dist > event.allowedRadius) { setStep("outside-radius"); return; }
 
@@ -111,23 +117,71 @@ export default function EventSubmissionPage() {
       gender: form.gender as "Male"|"Female"|"Prefer not to say",
       photoBase64: form.photo, latitude: form.latitude!, longitude: form.longitude!,
       address: form.address, timestamp: new Date().toISOString(),
+      phase,
+    };
+
+    const queueOffline = () => {
+      saveOfflineSubmission(subPayload);
+      setSubmittedName(form.fullName.trim());
+      setOfflineCount((count) => count + 1);
+      if (phase === "PRE_OUTREACH" && event.postOutreachOpen) {
+        setPhase("POST_OUTREACH");
+        setForm((previous) => ({ ...previous, photo: "", latitude: null, longitude: null, address: "" }));
+        setGpsStatus("idle");
+        setStageNotice("Pre-Outreach attendance is saved offline. Complete Post-Outreach attendance, then sync both records.");
+        setStep("form");
+      } else {
+        setStep("offline-success");
+      }
     };
 
     try {
-      await saveSubmission(subPayload);
+      const result = await saveSubmission(subPayload);
+      if (!result.ok) {
+        if (result.reason === "duplicate" && phase === "PRE_OUTREACH" && result.postOutreachOpen) {
+          setPreOutreachRecorded(true);
+          setPhase("POST_OUTREACH");
+          setForm((previous) => ({ ...previous, photo: "", latitude: null, longitude: null, address: "" }));
+          setErrors({});
+          setGpsStatus("idle");
+          setStageNotice("Pre-Outreach attendance was already recorded. Continue with Post-Outreach attendance.");
+          setStep("form");
+          return;
+        }
+        if (result.reason === "closed") {
+          setStep("phase-closed");
+          return;
+        }
+        if (result.reason === "duplicate") {
+          setErrors({ stateCode: `This state code already has ${phase === "PRE_OUTREACH" ? "Pre" : "Post"}-Outreach attendance.` });
+          setStep("form");
+          return;
+        }
+        console.error("Attendance submission failed:", result.error);
+        queueOffline();
+        return;
+      }
       setSubmittedName(form.fullName.trim());
-      setStep("success");
+      if (phase === "PRE_OUTREACH" && result.postOutreachOpen) {
+        setPreOutreachRecorded(true);
+        setPhase("POST_OUTREACH");
+        setForm((previous) => ({ ...previous, photo: "", latitude: null, longitude: null, address: "" }));
+        setErrors({});
+        setGpsStatus("idle");
+        setStageNotice("Pre-Outreach attendance recorded. Now complete Post-Outreach attendance for this participant.");
+        setStep("form");
+      } else {
+        setStep("success");
+      }
     } catch (e) {
       console.error("Network error, saving offline:", e);
-      saveOfflineSubmission(subPayload);
-      setSubmittedName(form.fullName.trim());
-      setStep("offline-success");
-      setOfflineCount(p => p + 1);
+      queueOffline();
     }
   };
 
   const resetForm = () => {
     setForm({ fullName: "", stateCode: "", gender: "", photo: "", latitude: null, longitude: null, address: "" });
+    setPreOutreachRecorded(false);
     setErrors({}); setGpsStatus("idle"); setStep("form");
     setOfflineCount(getOfflineSubmissions().length);
     setTimeout(fetchGPS, 200);
@@ -138,18 +192,27 @@ export default function EventSubmissionPage() {
     if (q.length === 0) return;
     setSyncing(true);
     let success = 0;
+    let closedForm = false;
     for (const sub of q) {
       try {
-        await saveSubmission(sub);
-        removeOfflineSubmission(sub.id);
-        success++;
+        const result = await saveSubmission({ ...sub, phase: sub.phase ?? "PRE_OUTREACH" });
+        if (result.ok || result.reason === "duplicate") {
+          removeOfflineSubmission(sub.id);
+          if (result.ok) success++;
+        } else if (result.reason === "closed") {
+          closedForm = true;
+          break;
+        } else {
+          break;
+        }
       } catch {
         break; // Network still bad
       }
     }
     setOfflineCount(getOfflineSubmissions().length);
     setSyncing(false);
-    if (success > 0) alert(`Successfully synced ${success} submission(s). Offline remaining: ${q.length - success}`);
+    if (closedForm) alert(`Synced ${success} submission(s). Some attendance remains pending because its form is closed. Ask the admin to reopen it, then sync again.`);
+    else if (success > 0) alert(`Successfully synced ${success} submission(s). Offline remaining: ${q.length - success}`);
     else alert("Network is still unreachable. Please try syncing again later.");
   };
 
@@ -185,6 +248,23 @@ export default function EventSubmissionPage() {
         </p>
         <p style={{ color: "var(--gray-400)", fontSize: "0.875rem", lineHeight: 1.6 }}>
           This event is no longer accepting submissions. Contact your event organiser if you think this is a mistake.
+        </p>
+      </div>
+    </div>
+  );
+
+  if (step === "phase-closed") return (
+    <div style={{ minHeight: "100vh", background: "var(--gray-50)" }}>
+      {header}
+      <div style={{ maxWidth: "420px", margin: "5rem auto", padding: "0 1rem", textAlign: "center" }}>
+        <div style={{ width: "4rem", height: "4rem", background: "var(--yellow-50)", borderRadius: "var(--r-xl)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.25rem", color: "var(--yellow-600)" }}>
+          <IcLock size={26} />
+        </div>
+        <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, color: "var(--gray-900)", fontSize: "1.25rem", marginBottom: "0.5rem" }}>
+          Attendance Forms Closed
+        </h2>
+        <p style={{ color: "var(--gray-500)", lineHeight: 1.6 }}>
+          Both Pre-Outreach and Post-Outreach attendance are currently closed for {event?.name}. Contact the event organiser.
         </p>
       </div>
     </div>
@@ -268,10 +348,10 @@ export default function EventSubmissionPage() {
               <IcCheck size={28} color="white" />
             </div>
             <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: "1.25rem", color: "var(--gray-900)", letterSpacing: "-0.025em", marginBottom: "0.5rem" }}>
-              Attendance Recorded
+              {phase === "POST_OUTREACH" && preOutreachRecorded ? "Attendance Complete" : "Attendance Recorded"}
             </h2>
             <p style={{ color: "var(--gray-500)", marginBottom: "0.5rem", fontSize: "0.875rem" }}>
-              <strong style={{ color: "var(--gray-800)" }}>{submittedName}</strong> has been successfully registered for:
+              <strong style={{ color: "var(--gray-800)" }}>{submittedName}</strong> has recorded {phase === "POST_OUTREACH" && preOutreachRecorded ? "both attendance forms" : `${phase === "PRE_OUTREACH" ? "Pre-Outreach" : "Post-Outreach"} attendance`} for:
             </p>
             <div style={{
               background: "var(--accent-50)", border: "1.5px solid var(--accent-100)",
@@ -280,6 +360,11 @@ export default function EventSubmissionPage() {
             }}>
               {event?.name}
             </div>
+            {phase === "PRE_OUTREACH" && !event?.postOutreachOpen && (
+              <p style={{ color: "var(--yellow-600)", fontSize: "0.8125rem", marginBottom: "1rem" }}>
+                Post-Outreach attendance is currently closed. This participant is not yet marked present.
+              </p>
+            )}
             <p style={{ color: "var(--gray-400)", fontSize: "0.75rem", marginBottom: "1.75rem" }}>
               {new Date().toLocaleString()}
             </p>
@@ -377,6 +462,16 @@ export default function EventSubmissionPage() {
         )}
 
         {/* GPS status */}
+        {stageNotice && (
+          <div className="alert alert-success" style={{ marginBottom: "1.25rem" }}>
+            {stageNotice}
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.75rem" }}>
+          <span className={`badge ${phase === "PRE_OUTREACH" ? "badge-blue" : "badge-green"}`}>
+            {phase === "PRE_OUTREACH" ? "Pre-Outreach" : "Post-Outreach"} · {phase === "PRE_OUTREACH" ? "1" : "2"} of 2
+          </span>
+        </div>
         <div className={`alert ${gpsStatus === "ok" ? "alert-success" : gpsStatus === "error" ? "alert-error" : "alert-info"}`} style={{ marginBottom: "1.25rem" }}>
           {gpsStatus === "loading" && (
             <><span className="spinner" style={{ width: "1rem", height: "1rem" }} />Detecting your location…</>
@@ -397,13 +492,14 @@ export default function EventSubmissionPage() {
 
         <div className="card">
           <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)" }}>
-            <div className="section-title">Attendance Form</div>
+            <div className="section-title">{phase === "PRE_OUTREACH" ? "Pre-Outreach Attendance" : "Post-Outreach Attendance"}</div>
             <p style={{ color: "var(--gray-500)", fontSize: "0.875rem", marginTop: "0.2rem" }}>
-              Fill in participant details and capture a live photo.
+              Fill in participant details and capture a live photo at the {phase === "PRE_OUTREACH" ? "start" : "end"} of the outreach.
             </p>
           </div>
           <div className="card-body">
             <form onSubmit={handleSubmit} noValidate>
+              {errors.submit && <div className="alert alert-error" style={{ marginBottom: "1rem" }}>{errors.submit}</div>}
               {/* Full Name */}
               <div className="form-group">
                 <label className="form-label" htmlFor="fullName">

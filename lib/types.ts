@@ -9,8 +9,12 @@ export interface Event {
   slug: string;
   createdAt: string;
   isOpen: boolean;
+  preOutreachOpen: boolean;
+  postOutreachOpen: boolean;
   participantCount?: number;
 }
+
+export type AttendancePhase = "PRE_OUTREACH" | "POST_OUTREACH";
 
 export interface Submission {
   id: string;
@@ -24,6 +28,7 @@ export interface Submission {
   longitude: number;
   address?: string;
   timestamp: string;
+  phase: AttendancePhase;
 }
 
 export interface AdminUser {

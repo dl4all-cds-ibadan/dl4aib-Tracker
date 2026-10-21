@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AdminSidebar from "@/components/AdminSidebar";
-import { getEvents, getSubmissions, deleteEvent, updateEvent, deleteSubmission } from "@/lib/actions";
+import { getEvents, getSubmissions, deleteEvent, updateEvent, deleteParticipantAttendance } from "@/lib/actions";
 import { Event, Submission } from "@/lib/types";
 import dynamic from "next/dynamic";
 import * as XLSX from "xlsx";
@@ -16,6 +16,22 @@ import { LogoMark } from "@/components/AppLogo";
 
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
+
+interface ParticipantAttendance {
+  key: string;
+  eventId: string;
+  eventName: string;
+  fullName: string;
+  stateCode: string;
+  gender: Submission["gender"];
+  pre?: Submission;
+  post?: Submission;
+}
+
+function submissionLocation(submission?: Submission): string {
+  if (!submission) return "";
+  return submission.address ?? `${submission.latitude}, ${submission.longitude}`;
+}
 
 function Dashboard() {
   const { isAdmin, initialized, logout } = useAuth();
@@ -63,8 +79,8 @@ function Dashboard() {
   const handleDeleteSubmission = async (sub: Submission) => {
     setDeletingSubId(sub.id);
     try {
-      await deleteSubmission(sub.id);
-      setSubmissions(s => s.filter(x => x.id !== sub.id));
+      await deleteParticipantAttendance(sub.eventId, sub.stateCode);
+      setSubmissions(s => s.filter(x => x.eventId !== sub.eventId || x.stateCode.toUpperCase() !== sub.stateCode.toUpperCase()));
     } catch (e) {
       console.error(e);
       alert("Failed to delete submission. Please check your network.");
@@ -94,13 +110,34 @@ function Dashboard() {
     finally { setEditSaving(false); }
   };
 
-  const filtered = filterEvent === "all" ? submissions : submissions.filter((s) => s.eventId === filterEvent);
+  const attendance = submissions.reduce<Map<string, ParticipantAttendance>>((groups, submission) => {
+    const key = `${submission.eventId}:${submission.stateCode.toUpperCase()}`;
+    const participant = groups.get(key) ?? {
+      key,
+      eventId: submission.eventId,
+      eventName: submission.eventName,
+      fullName: submission.fullName,
+      stateCode: submission.stateCode,
+      gender: submission.gender,
+    };
+    if (submission.phase === "POST_OUTREACH") participant.post = submission;
+    else participant.pre = submission;
+    groups.set(key, participant);
+    return groups;
+  }, new Map());
+  const filtered = [...attendance.values()].filter((participant) =>
+    filterEvent === "all" || participant.eventId === filterEvent
+  );
 
   const exportCSV = () => {
-    const rows = filtered.map((s) => ({
-      Name: s.fullName, "State Code": s.stateCode, Gender: s.gender,
-      Event: s.eventName, Timestamp: new Date(s.timestamp).toLocaleString(),
-      Latitude: s.latitude, Longitude: s.longitude, Address: s.address ?? "",
+    const rows = filtered.map((participant) => ({
+      Name: participant.fullName, "State Code": participant.stateCode, Gender: participant.gender,
+      Event: participant.eventName,
+      "Pre Outreach": participant.pre ? new Date(participant.pre.timestamp).toLocaleString() : "",
+      "Post Outreach": participant.post ? new Date(participant.post.timestamp).toLocaleString() : "",
+      "Pre Outreach Location": submissionLocation(participant.pre),
+      "Post Outreach Location": submissionLocation(participant.post),
+      Status: participant.pre && participant.post ? "Present" : "Incomplete",
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -110,9 +147,15 @@ function Dashboard() {
 
   const exportCSVOnly = () => {
     if (!filtered.length) return;
-    const header = ["Name","State Code","Gender","Event","Timestamp","Latitude","Longitude","Address"];
-    const rows = filtered.map((s) =>
-      [s.fullName, s.stateCode, s.gender, s.eventName, new Date(s.timestamp).toLocaleString(), s.latitude, s.longitude, s.address ?? ""].join(",")
+    const header = ["Name","State Code","Gender","Event","Pre Outreach Timestamp","Post Outreach Timestamp","Pre Outreach Location","Post Outreach Location","Status"];
+    const csvValue = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const rows = filtered.map((participant) =>
+      [participant.fullName, participant.stateCode, participant.gender, participant.eventName,
+        participant.pre ? new Date(participant.pre.timestamp).toLocaleString() : "",
+        participant.post ? new Date(participant.post.timestamp).toLocaleString() : "",
+        submissionLocation(participant.pre),
+        submissionLocation(participant.post),
+        participant.pre && participant.post ? "Present" : "Incomplete"].map(csvValue).join(",")
     );
     const blob = new Blob([[header.join(","), ...rows].join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -129,13 +172,13 @@ function Dashboard() {
 
   const stats = [
     { Icon: IcCalendar, label: "Total Events",    value: events.length,      color: "var(--brand-600)",  bg: "var(--brand-50)"  },
-    { Icon: IcUsers,    label: "Participants",     value: submissions.length, color: "var(--accent-600)", bg: "var(--accent-50)" },
+    { Icon: IcUsers,    label: "Participants",     value: attendance.size, color: "var(--accent-600)", bg: "var(--accent-50)" },
     { Icon: IcCamera,   label: "Photos Captured",  value: submissions.filter((s) => s.photoBase64).length, color: "var(--yellow-600)", bg: "var(--yellow-50)" },
     { Icon: IcCalendar, label: "Active Events",    value: events.filter((e) => new Date(e.date) >= new Date(new Date().setHours(0,0,0,0))).length, color: "var(--blue-600)", bg: "var(--blue-50)" },
   ];
 
   return (
-    <div>
+    <div className="admin-layout">
       <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Edit Event Modal */}
@@ -291,7 +334,7 @@ function Dashboard() {
                       </thead>
                       <tbody>
                         {events.map((ev) => {
-                          const count = submissions.filter(s => s.eventId === ev.id).length;
+                          const count = [...attendance.values()].filter(s => s.eventId === ev.id).length;
                           const isPast = new Date(ev.date) < new Date(new Date().setHours(0,0,0,0));
                           return (
                             <tr key={ev.id}>
@@ -389,21 +432,26 @@ function Dashboard() {
                           <th>State</th>
                           <th>Gender</th>
                           <th>Event</th>
-                          <th>Time</th>
-                          <th>Coordinates</th>
+                          <th>Pre Outreach</th>
+                          <th>Post Outreach</th>
+                          <th>Pre Location</th>
+                          <th>Post Location</th>
+                          <th>Status</th>
                           <th></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filtered.map((s) => (
-                          <tr key={s.id}>
+                        {filtered.map((participant) => {
+                          const preview = participant.pre ?? participant.post;
+                          return (
+                          <tr key={participant.key}>
                             <td>
-                              {s.photoBase64 ? (
+                              {preview?.photoBase64 ? (
                                 <img
-                                  src={s.photoBase64}
-                                  alt={s.fullName}
+                                  src={preview.photoBase64}
+                                  alt={participant.fullName}
                                   className="photo-thumb"
-                                  onClick={() => setPhotoModal(s.photoBase64)}
+                                  onClick={() => setPhotoModal(preview.photoBase64)}
                                 />
                               ) : (
                                 <div style={{
@@ -417,19 +465,30 @@ function Dashboard() {
                                 </div>
                               )}
                             </td>
-                            <td><span style={{ fontWeight: 600, color: "var(--gray-900)" }}>{s.fullName}</span></td>
-                            <td><span className="badge badge-blue">{s.stateCode}</span></td>
-                            <td><span className="badge badge-gray">{s.gender}</span></td>
-                            <td style={{ fontSize: "0.8rem", color: "var(--gray-500)", maxWidth: "150px" }} className="truncate">{s.eventName}</td>
+                            <td><span style={{ fontWeight: 600, color: "var(--gray-900)" }}>{participant.fullName}</span></td>
+                            <td><span className="badge badge-blue">{participant.stateCode}</span></td>
+                            <td><span className="badge badge-gray">{participant.gender}</span></td>
+                            <td style={{ fontSize: "0.8rem", color: "var(--gray-500)", maxWidth: "150px" }} className="truncate">{participant.eventName}</td>
                             <td style={{ fontSize: "0.75rem", color: "var(--gray-400)", whiteSpace: "nowrap" }}>
-                              {new Date(s.timestamp).toLocaleString()}
+                              {participant.pre ? new Date(participant.pre.timestamp).toLocaleString() : "—"}
                             </td>
-                            <td style={{ fontSize: "0.75rem", color: "var(--gray-400)", fontFamily: "monospace" }}>
-                              {s.latitude.toFixed(5)}, {s.longitude.toFixed(5)}
+                            <td style={{ fontSize: "0.75rem", color: "var(--gray-400)", whiteSpace: "nowrap" }}>
+                              {participant.post ? new Date(participant.post.timestamp).toLocaleString() : "—"}
+                            </td>
+                            <td style={{ fontSize: "0.75rem", color: "var(--gray-400)", maxWidth: "180px" }} className="truncate">
+                              {participant.pre?.address ?? (participant.pre ? `${participant.pre.latitude.toFixed(5)}, ${participant.pre.longitude.toFixed(5)}` : "—")}
+                            </td>
+                            <td style={{ fontSize: "0.75rem", color: "var(--gray-400)", maxWidth: "180px" }} className="truncate">
+                              {participant.post?.address ?? (participant.post ? `${participant.post.latitude.toFixed(5)}, ${participant.post.longitude.toFixed(5)}` : "—")}
+                            </td>
+                            <td>
+                              <span className={`badge ${participant.pre && participant.post ? "badge-green" : "badge-gray"}`}>
+                                {participant.pre && participant.post ? "Present" : "Incomplete"}
+                              </span>
                             </td>
                             <td>
                               <button
-                                onClick={() => setConfirmSub(s)}
+                                onClick={() => setConfirmSub(participant.pre ?? participant.post ?? null)}
                                 className="btn btn-ghost btn-xs"
                                 style={{ color: "var(--red-600)" }}
                                 title="Delete fraudulent entry"
@@ -438,7 +497,8 @@ function Dashboard() {
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -492,9 +552,9 @@ function Dashboard() {
                   <IcTrash size={20} />
                 </div>
                 <div>
-                  <div className="section-title" style={{ marginBottom: "0.375rem" }}>Delete Submission?</div>
+                  <div className="section-title" style={{ marginBottom: "0.375rem" }}>Delete Attendance?</div>
                   <p style={{ fontSize: "0.875rem", color: "var(--gray-500)", lineHeight: 1.6 }}>
-                    Remove <strong style={{ color: "var(--gray-900)" }}>{confirmSub.fullName}</strong> ({confirmSub.stateCode}) from <strong style={{ color: "var(--gray-900)" }}>{confirmSub.eventName}</strong>? This cannot be undone.
+                    Remove <strong style={{ color: "var(--gray-900)" }}>{confirmSub.fullName}</strong> ({confirmSub.stateCode}) and both attendance records from <strong style={{ color: "var(--gray-900)" }}>{confirmSub.eventName}</strong>? This cannot be undone.
                   </p>
                 </div>
               </div>
@@ -507,7 +567,7 @@ function Dashboard() {
                 >
                   {deletingSubId === confirmSub.id
                     ? <><span className="spinner" style={{ width: "0.875rem", height: "0.875rem", borderTopColor: "white" }} />Deleting…</>
-                    : <><IcTrash size={13} />Delete Entry</>
+                    : <><IcTrash size={13} />Delete Attendance</>
                   }
                 </button>
               </div>

@@ -55,7 +55,7 @@ function QRPage() {
   ];
 
   return (
-    <div>
+    <div className="admin-layout">
       <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="admin-content">
         <header className="app-header">

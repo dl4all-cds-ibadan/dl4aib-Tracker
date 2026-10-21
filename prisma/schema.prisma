@@ -22,6 +22,8 @@ model Event {
   allowedRadius Int
   date          String   // We can use String for 'YYYY-MM-DD' as currently stored, or DateTime
   isOpen        Boolean  @default(true)
+  preOutreachOpen  Boolean @default(true)
+  postOutreachOpen Boolean @default(true)
   createdAt     DateTime @default(now())
 
   submissions   Submission[]
@@ -41,6 +43,7 @@ model Submission {
   address      String?
   photoBase64  String
   timestamp    String
+  phase        String   @default("PRE_OUTREACH")
 
   // Define the relationship to the Event model
   event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AdminSidebar from "@/components/AdminSidebar";
-import { getEvents, getSubmissions, deleteEvent, updateEvent, toggleEventOpen } from "@/lib/actions";
-import { Submission, Event } from "@/lib/types";
+import { getEvents, getSubmissions, deleteEvent, updateEvent, toggleEventOpen, toggleAttendancePhase } from "@/lib/actions";
+import { AttendancePhase, Submission, Event } from "@/lib/types";
 import { IcMenu, IcPlus, IcQr, IcLink, IcCalendar, IcPin, IcRadar, IcUsers, IcTrash, IcEdit, IcCheck, IcX, IcLock } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
@@ -264,10 +264,24 @@ function AllEvents() {
     }
   };
 
+  const handleTogglePhase = async (ev: Event, phase: AttendancePhase) => {
+    const field = phase === "PRE_OUTREACH" ? "preOutreachOpen" : "postOutreachOpen";
+    const next = !ev[field];
+    setTogglingId(`${ev.id}:${phase}`);
+    try {
+      await toggleAttendancePhase(ev.id, phase, next);
+      setEvents(prev => prev.map(event => event.id === ev.id ? { ...event, [field]: next } : event));
+    } catch {
+      alert(`Failed to update ${phase === "PRE_OUTREACH" ? "Pre" : "Post"} Outreach access.`);
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   if (!initialized || !isAdmin) return null;
 
   return (
-    <div>
+    <div className="admin-layout">
       {/* Edit modal */}
       {editingEvent && (
         <EditModal
@@ -328,7 +342,7 @@ function AllEvents() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
               {events.map((ev, i) => {
-                const count  = submissions.filter(s => s.eventId === ev.id).length;
+                const count  = new Set(submissions.filter(s => s.eventId === ev.id).map(s => s.stateCode.toUpperCase())).size;
                 const isPast = new Date(ev.date) < new Date(new Date().setHours(0,0,0,0));
                 return (
                   <div key={ev.id} className="card fade-in" style={{ animationDelay: `${i * 0.04}s` }}>
@@ -383,6 +397,23 @@ function AllEvents() {
                         marginTop: "1rem", paddingTop: "0.875rem",
                         borderTop: "1px solid var(--border)",
                       }}>
+                        {([
+                          ["PRE_OUTREACH", "Pre Outreach", ev.preOutreachOpen],
+                          ["POST_OUTREACH", "Post Outreach", ev.postOutreachOpen],
+                        ] as const).map(([phase, label, isOpen]) => (
+                          <button
+                            key={phase}
+                            onClick={() => handleTogglePhase(ev, phase)}
+                            disabled={togglingId === `${ev.id}:${phase}` || !ev.isOpen}
+                            className="btn btn-secondary btn-sm"
+                            title={!ev.isOpen ? "Reopen the event before opening attendance" : `${isOpen ? "Close" : "Open"} ${label}`}
+                          >
+                            {togglingId === `${ev.id}:${phase}`
+                              ? <span className="spinner" style={{ width: "0.875rem", height: "0.875rem" }} />
+                              : <><IcLock size={14} />{label}: {isOpen && ev.isOpen ? "Open" : "Closed"}</>
+                            }
+                          </button>
+                        ))}
                         <Link href={`/admin/events/${ev.id}/qr`} className="btn btn-primary btn-sm">
                           <IcQr size={14} /> QR Code
                         </Link>

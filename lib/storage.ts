@@ -116,9 +116,9 @@ export function distanceMetres(
 }
 
 /** Rate-limit: block if same device submitted for same event within 60 s */
-export function isRateLimited(eventId: string): boolean {
+export function isRateLimited(eventId: string, phase: string): boolean {
   if (!isBrowser()) return false;
-  const key = `dl4aib_ratelimit_${eventId}`;
+  const key = `dl4aib_ratelimit_${eventId}_${phase}`;
   const last = Number(localStorage.getItem(key) ?? 0);
   const now = Date.now();
   if (now - last < 60_000) return true;

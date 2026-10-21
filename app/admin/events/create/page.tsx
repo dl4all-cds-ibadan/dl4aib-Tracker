@@ -373,6 +373,8 @@ function CreateEventForm() {
         allowedRadius: parseInt(form.allowedRadius),
         date: form.date,
         isOpen: true,
+        preOutreachOpen: false,
+        postOutreachOpen: false,
         createdAt: new Date().toISOString(),
       });
       setSaving(false);
@@ -392,7 +394,7 @@ function CreateEventForm() {
   const pickedLng = form.longitude ? parseFloat(form.longitude) : null;
 
   return (
-    <div>
+    <div className="admin-layout">
       <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="admin-content">
         <header className="app-header">

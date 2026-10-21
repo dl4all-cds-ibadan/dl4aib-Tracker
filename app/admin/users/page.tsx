@@ -93,7 +93,7 @@ function ManageUsers() {
   if (!initialized || !isSuperAdmin) return null;
 
   return (
-    <div>
+    <div className="admin-layout">
       <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Delete User Confirm Modal */}

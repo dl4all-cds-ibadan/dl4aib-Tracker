@@ -2,7 +2,7 @@
 
 import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
-import { Event, Submission, User } from "./types";
+import { AttendancePhase, Event, Submission, User } from "./types";
 
 export async function getEvents(): Promise<Event[]> {
   try {
@@ -33,6 +33,8 @@ export async function saveEvent(event: Event): Promise<void> {
         allowedRadius: event.allowedRadius,
         date: event.date,
         isOpen: event.isOpen,
+        preOutreachOpen: event.preOutreachOpen,
+        postOutreachOpen: event.postOutreachOpen,
       },
       create: {
         id: event.id,
@@ -44,6 +46,8 @@ export async function saveEvent(event: Event): Promise<void> {
         allowedRadius: event.allowedRadius,
         date: event.date,
         isOpen: event.isOpen,
+        preOutreachOpen: event.preOutreachOpen,
+        postOutreachOpen: event.postOutreachOpen,
         createdAt: new Date(event.createdAt),
       },
     });
@@ -59,7 +63,7 @@ export async function getEventBySlug(slug: string): Promise<Event | null> {
       where: { slug },
     });
     if (!r) return null;
-    return { ...r, isOpen: r.isOpen, createdAt: r.createdAt.toISOString() };
+    return { ...r, createdAt: r.createdAt.toISOString() };
   } catch (e) {
     console.error("Failed to fetch event by slug:", e);
     return null;
@@ -72,7 +76,7 @@ export async function getEventById(id: string): Promise<Event | null> {
       where: { id },
     });
     if (!r) return null;
-    return { ...r, isOpen: r.isOpen, createdAt: r.createdAt.toISOString() };
+    return { ...r, createdAt: r.createdAt.toISOString() };
   } catch (e) {
     console.error("Failed to fetch event by id:", e);
     return null;
@@ -96,6 +100,7 @@ export async function getSubmissions(): Promise<Submission[]> {
       address: r.address || undefined,
       photoBase64: r.photoBase64,
       timestamp: r.timestamp,
+      phase: r.phase as AttendancePhase,
     }));
   } catch (e) {
     console.error("Failed to fetch submissions:", e);
@@ -121,6 +126,7 @@ export async function getSubmissionsByEvent(eventId: string): Promise<Submission
       address: r.address || undefined,
       photoBase64: r.photoBase64,
       timestamp: r.timestamp,
+      phase: r.phase as AttendancePhase,
     }));
   } catch (e) {
     console.error("Failed to fetch event submissions:", e);
@@ -131,32 +137,55 @@ export async function getSubmissionsByEvent(eventId: string): Promise<Submission
 /** Returns true if `stateCode` has already been submitted for this event */
 export async function checkDuplicateStateCode(
   eventId: string,
-  stateCode: string
+  stateCode: string,
+  phase: AttendancePhase
 ): Promise<boolean> {
   try {
     const existing = await prisma.submission.findFirst({
       where: {
         eventId,
+        phase,
         stateCode: { equals: stateCode.trim().toUpperCase(), mode: "insensitive" },
       },
     });
     return existing !== null;
   } catch (e) {
     console.error("Failed to check duplicate state code:", e);
-    return false; // On error, allow submission to proceed
+    throw e;
   }
 }
 
 export type SaveResult =
-  | { ok: true }
-  | { ok: false; duplicate: true }
-  | { ok: false; duplicate: false; error: unknown };
+  | { ok: true; postOutreachOpen: boolean }
+  | { ok: false; reason: "duplicate"; postOutreachOpen: boolean }
+  | { ok: false; reason: "closed" }
+  | { ok: false; reason: "error"; error: string };
 
 /** Saves a submission, always uppercasing the stateCode first.
  *  Returns a typed result instead of throwing so callers can handle
  *  the duplicate-stateCode case without a generic try/catch. */
 export async function saveSubmission(submission: Submission): Promise<SaveResult> {
+  let postOutreachOpen = false;
   try {
+    const event = await prisma.event.findUnique({ where: { id: submission.eventId } });
+    if (
+      !event ||
+      !event.isOpen ||
+      (submission.phase === "PRE_OUTREACH" ? !event.preOutreachOpen : !event.postOutreachOpen)
+    ) {
+      return { ok: false, reason: "closed" };
+    }
+    postOutreachOpen = event.postOutreachOpen;
+    const alreadySubmitted = await prisma.submission.findFirst({
+      where: {
+        eventId: submission.eventId,
+        phase: submission.phase,
+        stateCode: { equals: submission.stateCode.trim().toUpperCase(), mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+    if (alreadySubmitted) return { ok: false, reason: "duplicate", postOutreachOpen: event.postOutreachOpen };
+
     await prisma.submission.create({
       data: {
         id: submission.id,
@@ -170,19 +199,20 @@ export async function saveSubmission(submission: Submission): Promise<SaveResult
         address: submission.address,
         photoBase64: submission.photoBase64,
         timestamp: submission.timestamp,
+        phase: submission.phase,
       },
     });
-    return { ok: true };
+    return { ok: true, postOutreachOpen: event.postOutreachOpen };
   } catch (e: unknown) {
     // Prisma unique-constraint violation → P2002
     if (
       e instanceof Error &&
       (e as { code?: string }).code === "P2002"
     ) {
-      return { ok: false, duplicate: true };
+      return { ok: false, reason: "duplicate", postOutreachOpen };
     }
     console.error("Failed to save submission:", e);
-    return { ok: false, duplicate: false, error: e };
+    return { ok: false, reason: "error", error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -204,6 +234,20 @@ export async function deleteSubmission(id: string): Promise<void> {
     });
   } catch (e) {
     console.error("Failed to delete submission:", e);
+    throw e;
+  }
+}
+
+export async function deleteParticipantAttendance(eventId: string, stateCode: string): Promise<void> {
+  try {
+    await prisma.submission.deleteMany({
+      where: {
+        eventId,
+        stateCode: { equals: stateCode.trim().toUpperCase(), mode: "insensitive" },
+      },
+    });
+  } catch (e) {
+    console.error("Failed to delete participant attendance:", e);
     throw e;
   }
 }
@@ -231,6 +275,23 @@ export async function toggleEventOpen(id: string, isOpen: boolean): Promise<void
     });
   } catch (e) {
     console.error("Failed to toggle event open state:", e);
+    throw e;
+  }
+
+}
+
+export async function toggleAttendancePhase(
+  id: string,
+  phase: AttendancePhase,
+  isOpen: boolean
+): Promise<void> {
+  try {
+    await prisma.event.update({
+      where: { id },
+      data: phase === "PRE_OUTREACH" ? { preOutreachOpen: isOpen } : { postOutreachOpen: isOpen },
+    });
+  } catch (e) {
+    console.error("Failed to toggle attendance phase:", e);
     throw e;
   }
 }
@@ -321,4 +382,3 @@ export async function authenticateUser(email: string, passwordPlain: string): Pr
     return { success: false, error: "Server error during authentication" };
   }
 }
-

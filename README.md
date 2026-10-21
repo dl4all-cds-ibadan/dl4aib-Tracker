@@ -16,6 +16,17 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Attendance database update
+
+Attendance is recorded in separate Pre-Outreach and Post-Outreach submissions. After pulling this change, apply the new fields to the configured PostgreSQL database and regenerate Prisma Client:
+
+```bash
+npx prisma db push
+npx prisma generate
+```
+
+New events start with both attendance forms closed. Open each form separately from **Admin → All Events** when attendance should begin. A participant is marked present only after both records exist.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
