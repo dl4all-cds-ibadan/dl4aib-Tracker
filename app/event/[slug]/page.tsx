@@ -6,7 +6,7 @@ import { generateId, distanceMetres, isRateLimited, saveOfflineSubmission, getOf
 import { getAttendanceRoute, getEventBySlug, saveSubmission, type AttendanceSnapshot } from "@/lib/actions";
 import { AttendancePhase, Event, Submission } from "@/lib/types";
 import PhotoCapture from "@/components/PhotoCapture";
-import { IcPin, IcCalendar, IcUser, IcCheck, IcRefresh, IcGps, IcLoader, IcLock } from "@/components/Icons";
+import { IcPin, IcCalendar, IcUser, IcCheck, IcRefresh, IcGps, IcLoader, IcLock, IcX } from "@/components/Icons";
 import { LogoMark } from "@/components/AppLogo";
 
 type Step = "loading"|"not-found"|"event-closed"|"phase-closed"|"already-complete"|"form"|"submitting"|"success"|"offline-success"|"outside-radius"|"rate-limited";
@@ -57,8 +57,14 @@ function AttendanceSummary({
         <div key={title} style={{ padding: "0.625rem 0", borderTop: "1px solid var(--border)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap", fontWeight: 600, color: "var(--gray-800)" }}>
             <span>{title}</span>
-            <span style={{ color: snapshot ? "var(--accent-600)" : "var(--gray-500)" }}>
-              {snapshot ? `Complete · Form ${open ? "open" : "closed"}` : `Not recorded · Form ${open ? "open" : "closed"}`}
+            <span style={{ color: snapshot ? "var(--accent-600)" : "var(--gray-500)", display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+              {snapshot
+                ? <><IcCheck size={13} />Complete</>
+                : title === "Post-Outreach" && !open
+                  ? <><IcCalendar size={13} />Not open yet</>
+                  : title === "Pre-Outreach" && !open
+                    ? <><IcX size={13} />Closed</>
+                    : <><IcCalendar size={13} />Open now</>}
             </span>
           </div>
           {snapshot && (
@@ -122,7 +128,9 @@ export default function EventSubmissionPage() {
       setForm((previous) => ({ ...previous, photo: "", latitude: null, longitude: null, address: "" }));
       setGpsStatus("idle");
       setStageNotice(route.phase === "POST_OUTREACH"
-        ? "Pre-Outreach attendance is already recorded or closed. Continue with Post-Outreach attendance."
+        ? route.pre
+          ? "Your Pre-Outreach attendance is recorded. You’re now completing Post-Outreach attendance."
+          : "Post-Outreach attendance is open now. Pre-Outreach is closed."
         : "");
     }
     setStep("form");
@@ -238,14 +246,8 @@ export default function EventSubmissionPage() {
     try {
       const result = await saveSubmission(subPayload);
       if (!result.ok) {
-        if (result.reason === "duplicate" && phase === "PRE_OUTREACH" && result.postOutreachOpen) {
-          setPreOutreachRecorded(true);
-          setPhase("POST_OUTREACH");
-          setForm((previous) => ({ ...previous, photo: "", latitude: null, longitude: null, address: "" }));
-          setErrors({});
-          setGpsStatus("idle");
-          setStageNotice("Pre-Outreach attendance was already recorded. Continue with Post-Outreach attendance.");
-          setStep("form");
+        if (result.reason === "duplicate") {
+          await routeForStateCode(event, form.stateCode);
           return;
         }
         if (result.reason === "closed") {
@@ -256,11 +258,6 @@ export default function EventSubmissionPage() {
           } else {
             setStep("phase-closed");
           }
-          return;
-        }
-        if (result.reason === "duplicate") {
-          setErrors({ stateCode: `This state code already has ${phase === "PRE_OUTREACH" ? "Pre" : "Post"}-Outreach attendance.` });
-          setStep("form");
           return;
         }
         console.error("Attendance submission failed:", result.error);
@@ -274,17 +271,20 @@ export default function EventSubmissionPage() {
         setForm((previous) => ({ ...previous, photo: "", latitude: null, longitude: null, address: "" }));
         setErrors({});
         setGpsStatus("idle");
-        setStageNotice("Pre-Outreach attendance recorded. Now complete Post-Outreach attendance for this participant.");
+        setStageNotice("Pre-Outreach attendance is recorded. Now complete Post-Outreach attendance for this participant.");
         setStep("form");
       } else {
-        if (phase === "POST_OUTREACH") {
-          try {
-            const route = await getAttendanceRoute(event.id, form.stateCode);
-            setAttendanceSnapshots({ pre: route.pre, post: route.post });
-            setPreOutreachRecorded(Boolean(route.pre));
-          } catch (error) {
-            console.error("Failed to load attendance confirmation details:", error);
-          }
+        try {
+          const route = await getAttendanceRoute(event.id, form.stateCode);
+          setAttendanceSnapshots({ pre: route.pre, post: route.post });
+          setPreOutreachRecorded(Boolean(route.pre));
+          setEvent((current) => current ? {
+            ...current,
+            preOutreachOpen: route.preOpen,
+            postOutreachOpen: route.postOpen,
+          } : current);
+        } catch (error) {
+          console.error("Failed to load attendance confirmation details:", error);
         }
         setStep("success");
       }
@@ -375,14 +375,50 @@ export default function EventSubmissionPage() {
       {header}
       <div style={{ maxWidth: "420px", margin: "5rem auto", padding: "0 1rem", textAlign: "center" }}>
         <div style={{ width: "4rem", height: "4rem", background: "var(--yellow-50)", borderRadius: "var(--r-xl)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.25rem", color: "var(--yellow-600)" }}>
-          <IcLock size={26} />
+          {attendanceSnapshots.pre && !attendanceSnapshots.post && !event?.postOutreachOpen
+            ? <IcCalendar size={26} />
+            : <IcLock size={26} />}
         </div>
         <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, color: "var(--gray-900)", fontSize: "1.25rem", marginBottom: "0.5rem" }}>
-          Attendance Forms Closed
+          {attendanceSnapshots.pre && !attendanceSnapshots.post && !event?.postOutreachOpen
+            ? "Pre-Outreach recorded"
+            : "Attendance isn’t open yet"}
         </h2>
         <p style={{ color: "var(--gray-500)", lineHeight: 1.6 }}>
-          Both Pre-Outreach and Post-Outreach attendance are currently closed for {event?.name}. Contact the event organiser.
+          {attendanceSnapshots.pre && !attendanceSnapshots.post && !event?.postOutreachOpen
+            ? "Your Pre-Outreach attendance is safely recorded. Please wait for the organiser to open Post-Outreach attendance to complete your attendance."
+            : <>Pre-Outreach is {event?.preOutreachOpen ? "open" : "closed"} and Post-Outreach is {event?.postOutreachOpen ? "open" : "not open yet"} for {event?.name}. Please check back when the attendance form you need is open.</>}
         </p>
+        {(attendanceSnapshots.pre || attendanceSnapshots.post) && (
+          <AttendanceSummary
+            pre={attendanceSnapshots.pre}
+            post={attendanceSnapshots.post}
+            preOpen={event?.preOutreachOpen ?? false}
+            postOpen={event?.postOutreachOpen ?? false}
+          />
+        )}
+        <div style={{ textAlign: "left", marginTop: "1.25rem" }}>
+          <label className="form-label" htmlFor="closed-state-code">Check attendance using State Code</label>
+          <input
+            id="closed-state-code"
+            className="form-input"
+            value={form.stateCode}
+            maxLength={15}
+            placeholder="Enter participant State Code"
+            onChange={(e) => set("stateCode", e.target.value)}
+            onBlur={handleStateCodeBlur}
+            style={{ textTransform: "uppercase", marginTop: "0.375rem" }}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary btn-full"
+            disabled={!form.stateCode.trim()}
+            onClick={handleStateCodeBlur}
+            style={{ marginTop: "0.625rem" }}
+          >
+            Check attendance status
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -512,9 +548,10 @@ export default function EventSubmissionPage() {
               />
             )}
             {phase === "PRE_OUTREACH" && !event?.postOutreachOpen && (
-              <p style={{ color: "var(--yellow-600)", fontSize: "0.8125rem", marginBottom: "1rem" }}>
-                Post-Outreach attendance is currently closed. This participant is not yet marked present.
-              </p>
+              <div className="alert alert-info" style={{ textAlign: "left", marginBottom: "1rem" }}>
+                <IcCalendar size={15} />
+                Pre-Outreach is recorded. Please wait for Post-Outreach attendance to open to complete both stages.
+              </div>
             )}
             <p style={{ color: "var(--gray-400)", fontSize: "0.75rem", marginBottom: "1.75rem" }}>
               {new Date().toLocaleString()}
@@ -615,20 +652,23 @@ export default function EventSubmissionPage() {
         {/* GPS status */}
         {stageNotice && (
           <div className="alert alert-success" style={{ marginBottom: "1.25rem" }}>
+            <IcCheck size={15} />
             {stageNotice}
           </div>
         )}
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-          <span className={`badge ${event?.preOutreachOpen ? "badge-green" : "badge-gray"}`}>
-            Pre-Outreach: {event?.preOutreachOpen ? "Open" : "Closed"}
+          <span className={`badge ${event?.preOutreachOpen ? "badge-green" : "badge-gray"}`} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+            {event?.preOutreachOpen ? <IcCheck size={12} /> : <IcX size={12} />}
+            Pre-Outreach: {event?.preOutreachOpen ? "Open now" : "Closed"}
           </span>
-          <span className={`badge ${event?.postOutreachOpen ? "badge-green" : "badge-gray"}`}>
-            Post-Outreach: {event?.postOutreachOpen ? "Open" : "Closed"}
+          <span className={`badge ${event?.postOutreachOpen ? "badge-green" : "badge-gray"}`} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+            {event?.postOutreachOpen ? <IcCheck size={12} /> : <IcCalendar size={12} />}
+            Post-Outreach: {event?.postOutreachOpen ? "Open now" : "Not open yet"}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.75rem" }}>
           <span className={`badge ${phase === "PRE_OUTREACH" ? "badge-blue" : "badge-green"}`}>
-            {phase === "PRE_OUTREACH" ? "Pre-Outreach" : "Post-Outreach"} · {phase === "PRE_OUTREACH" ? "1" : "2"} of 2
+            {phase === "PRE_OUTREACH" ? "Filling: Pre-Outreach" : "Filling: Post-Outreach"} · {phase === "PRE_OUTREACH" ? "1" : "2"} of 2
           </span>
         </div>
         <div className={`alert ${gpsStatus === "ok" ? "alert-success" : gpsStatus === "error" ? "alert-error" : "alert-info"}`} style={{ marginBottom: "1.25rem" }}>
@@ -653,7 +693,12 @@ export default function EventSubmissionPage() {
           <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)" }}>
             <div className="section-title">{phase === "PRE_OUTREACH" ? "Pre-Outreach Attendance" : "Post-Outreach Attendance"}</div>
             <p style={{ color: "var(--gray-500)", fontSize: "0.875rem", marginTop: "0.2rem" }}>
-              You are filling the {phase === "PRE_OUTREACH" ? "Pre-Outreach" : "Post-Outreach"} attendance form, which is currently open. Pre-Outreach is {event?.preOutreachOpen ? "open" : "closed"} and Post-Outreach is {event?.postOutreachOpen ? "open" : "closed"}. Capture the participant&apos;s attendance at the {phase === "PRE_OUTREACH" ? "start" : "end"} of the outreach.
+              This is the {phase === "PRE_OUTREACH" ? "Pre-Outreach" : "Post-Outreach"} attendance form and it is open now. {phase === "PRE_OUTREACH" && event?.postOutreachOpen
+                ? "Post-Outreach is also open; after recording Pre-Outreach, the form will guide you to the next stage."
+                : phase === "PRE_OUTREACH"
+                  ? "Post-Outreach is not open yet. Once Pre-Outreach is recorded, please wait for the organiser to open Post-Outreach."
+                  : `Pre-Outreach is ${event?.preOutreachOpen ? "open" : "closed"}.`}
+              {" "}Capture the participant&apos;s attendance at the {phase === "PRE_OUTREACH" ? "start" : "end"} of the outreach.
             </p>
           </div>
           <div className="card-body">

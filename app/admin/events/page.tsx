@@ -330,6 +330,14 @@ function AllEvents() {
           <div style={{ marginBottom: "1.5rem" }}>
             <div className="page-title">Outreach Events</div>
             <div className="page-subtitle">Manage and monitor all your field events</div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
+              <Link href="/admin/events/october-outreach" className="btn btn-primary btn-sm">
+                <IcCalendar size={14} />Set up October outreach locations
+              </Link>
+              <Link href="/admin/events/create" className="btn btn-secondary btn-sm">
+                <IcPlus size={14} />Create one event
+              </Link>
+            </div>
           </div>
 
           {events.length === 0 ? (
